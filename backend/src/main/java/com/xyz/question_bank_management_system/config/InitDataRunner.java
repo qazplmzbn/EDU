@@ -1,10 +1,10 @@
 package com.xyz.question_bank_management_system.config;
 
-import com.xyz.question_bank_management_system.entity.SysRole;
-import com.xyz.question_bank_management_system.entity.SysUser;
-import com.xyz.question_bank_management_system.mapper.SysRoleMapper;
-import com.xyz.question_bank_management_system.mapper.SysUserMapper;
-import com.xyz.question_bank_management_system.mapper.SysUserRoleMapper;
+import com.xyz.question_bank_management_system.modules.user.entity.SysRole;
+import com.xyz.question_bank_management_system.modules.user.entity.SysUser;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysRoleMapper;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysUserRoleMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

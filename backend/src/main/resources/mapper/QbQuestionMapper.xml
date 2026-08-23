@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.xyz.question_bank_management_system.mapper.QbQuestionMapper">
+<mapper namespace="com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionMapper">
 
     <sql id="BaseWhere">
         q.is_deleted=0
@@ -67,7 +67,7 @@
         </if>
     </sql>
 
-    <select id="search" resultType="com.xyz.question_bank_management_system.entity.QbQuestion">
+    <select id="search" resultType="com.xyz.question_bank_management_system.modules.bank.entity.QbQuestion">
         SELECT q.*
         FROM qb_question q
         WHERE <include refid="BaseWhere"/>
@@ -81,7 +81,7 @@
         WHERE <include refid="BaseWhere"/>
     </select>
 
-    <select id="searchForPractice" resultType="com.xyz.question_bank_management_system.entity.QbQuestion">
+    <select id="searchForPractice" resultType="com.xyz.question_bank_management_system.modules.bank.entity.QbQuestion">
         SELECT q.*
         FROM qb_question q
         WHERE q.is_deleted = 0
@@ -115,7 +115,7 @@
         LIMIT #{limit}
     </select>
 
-    <select id="selectPublishedByIds" resultType="com.xyz.question_bank_management_system.entity.QbQuestion">
+    <select id="selectPublishedByIds" resultType="com.xyz.question_bank_management_system.modules.bank.entity.QbQuestion">
         SELECT q.*
         FROM qb_question q
         WHERE q.is_deleted = 0

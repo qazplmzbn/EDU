@@ -26,7 +26,7 @@ class Settings:
     DB_HOST: str = _env("DB_HOST", "localhost")
     DB_PORT: int = int(_env("DB_PORT", "3306"))
     DB_USER: str = _env("DB_USER", "root")
-    DB_PASSWORD: str = _env("DB_PASSWORD", "200124")
+    DB_PASSWORD: str = _env("DB_PASSWORD", "126066cxg2")
     DB_NAME: str = _env("DB_NAME", "question_bank")
 
     # PostgreSQL + PostGIS（地理/机构）

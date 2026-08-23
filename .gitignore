@@ -60,3 +60,13 @@ env/
 uploads/
 temp/
 tmp/
+
+# Local planning notes
+/计划.md
+/后端工作安排.md
+
+# Local Word design documents
+/*.docx
+
+# Local PDF documents
+/*.pdf

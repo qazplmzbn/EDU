@@ -1,8 +1,8 @@
 package com.xyz.question_bank_management_system.security;
 
-import com.xyz.question_bank_management_system.entity.SysUser;
-import com.xyz.question_bank_management_system.mapper.SysRoleMapper;
-import com.xyz.question_bank_management_system.mapper.SysUserMapper;
+import com.xyz.question_bank_management_system.modules.user.entity.SysUser;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysRoleMapper;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;

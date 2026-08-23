@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.xyz.question_bank_management_system.mapper.QbAssignmentTargetMapper">
+<mapper namespace="com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper">
 
     <insert id="batchInsert">
         INSERT INTO qb_assignment_target(assignment_id, user_id, created_at)
