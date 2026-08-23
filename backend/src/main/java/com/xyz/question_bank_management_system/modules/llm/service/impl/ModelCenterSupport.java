@@ -1,4 +1,4 @@
-package com.xyz.question_bank_management_system.modules.llm.service;
+package com.xyz.question_bank_management_system.modules.llm.service.impl;
 
 import org.springframework.util.StringUtils;
 
@@ -113,3 +113,4 @@ final class ModelCenterSupport {
         return timestamp == null ? Timestamp.valueOf(LocalDateTime.now()) : timestamp;
     }
 }
+

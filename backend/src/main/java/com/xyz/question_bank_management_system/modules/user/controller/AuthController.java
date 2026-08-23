@@ -2,7 +2,7 @@ package com.xyz.question_bank_management_system.modules.user.controller;
 
 import com.xyz.question_bank_management_system.common.ApiResponse;
 import com.xyz.question_bank_management_system.modules.user.dto.LoginRequest;
-import com.xyz.question_bank_management_system.modules.user.dto.LoginResponse;
+import com.xyz.question_bank_management_system.modules.user.vo.LoginResponse;
 import com.xyz.question_bank_management_system.modules.user.dto.RegisterRequest;
 import com.xyz.question_bank_management_system.modules.user.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;

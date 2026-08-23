@@ -6,7 +6,7 @@ import com.xyz.question_bank_management_system.modules.user.dto.AdminCreateUserR
 import com.xyz.question_bank_management_system.modules.user.dto.AdminUpdateUserRequest;
 import com.xyz.question_bank_management_system.modules.user.dto.AdminUpdateUserRoleRequest;
 import com.xyz.question_bank_management_system.modules.user.dto.LoginRequest;
-import com.xyz.question_bank_management_system.modules.user.dto.LoginResponse;
+import com.xyz.question_bank_management_system.modules.user.vo.LoginResponse;
 import com.xyz.question_bank_management_system.modules.user.dto.RegisterRequest;
 import com.xyz.question_bank_management_system.modules.user.entity.SysLoginLog;
 import com.xyz.question_bank_management_system.modules.user.entity.SysRole;

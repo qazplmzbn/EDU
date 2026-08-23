@@ -1,4 +1,4 @@
-package com.xyz.question_bank_management_system.modules.user.dto;
+package com.xyz.question_bank_management_system.modules.user.vo;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -17,6 +17,7 @@ import com.xyz.question_bank_management_system.util.SecurityContextUtil;
 import com.xyz.question_bank_management_system.modules.bank.vo.AttemptStartVO;
 import com.xyz.question_bank_management_system.modules.knowledge.vo.KnowledgeGraphExtractionVO;
 import com.xyz.question_bank_management_system.modules.learning.vo.PersonalizedPracticePlanVO;
+import com.xyz.question_bank_management_system.modules.learning.vo.SmartLearningVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -78,7 +79,7 @@ public class SmartLearningController {
 
     @PostMapping("/resources/{id}/recommend-targets")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<SmartLearningService.ResourceRecommendationPublishResult> recommendResourceTargets(@PathVariable Long id,
+    public ApiResponse<SmartLearningVO.ResourceRecommendationPublishResult> recommendResourceTargets(@PathVariable Long id,
                                                                                                            @RequestBody(required = false) LearningResourceRecommendRequest request) {
         return ApiResponse.ok(smartLearningService.recommendResourceTargets(id, request, SecurityContextUtil.getUserId(), hasRole("ROLE_ADMIN")));
     }
@@ -105,25 +106,25 @@ public class SmartLearningController {
 
     @GetMapping("/profile")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<SmartLearningService.LearningProfile> profile() {
+    public ApiResponse<SmartLearningVO.LearningProfile> profile() {
         return ApiResponse.ok(smartLearningService.profile(SecurityContextUtil.getUserId()));
     }
 
     @GetMapping("/profile/report")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<SmartLearningService.StudentProfileReport> profileReport() {
+    public ApiResponse<SmartLearningVO.StudentProfileReport> profileReport() {
         return ApiResponse.ok(smartLearningService.profileReport(SecurityContextUtil.getUserId()));
     }
 
     @GetMapping("/recommendations")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<SmartLearningService.LearningRecommendation> recommendations() {
+    public ApiResponse<SmartLearningVO.LearningRecommendation> recommendations() {
         return ApiResponse.ok(smartLearningService.recommendations(SecurityContextUtil.getUserId()));
     }
 
     @GetMapping("/path-recommendation")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<SmartLearningService.LearningPathRecommendation> pathRecommendation(@RequestParam(required = false) String stage,
+    public ApiResponse<SmartLearningVO.LearningPathRecommendation> pathRecommendation(@RequestParam(required = false) String stage,
                                                                                            @RequestParam(required = false) String goal,
                                                                                            @RequestParam(required = false) Integer days) {
         return ApiResponse.ok(smartLearningService.pathRecommendation(SecurityContextUtil.getUserId(), stage, goal, days));
@@ -131,19 +132,19 @@ public class SmartLearningController {
 
     @PostMapping("/path-recommendation/snapshots")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<SmartLearningService.LearningPathSnapshotSaved> savePathSnapshot(@RequestBody(required = false) LearningPathSnapshotSaveRequest request) {
+    public ApiResponse<SmartLearningVO.LearningPathSnapshotSaved> savePathSnapshot(@RequestBody(required = false) LearningPathSnapshotSaveRequest request) {
         return ApiResponse.ok(smartLearningService.savePathSnapshot(SecurityContextUtil.getUserId(), request));
     }
 
     @GetMapping("/path-recommendation/snapshots/{id}")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<SmartLearningService.LearningPathRecommendation> pathSnapshotDetail(@PathVariable Long id) {
+    public ApiResponse<SmartLearningVO.LearningPathRecommendation> pathSnapshotDetail(@PathVariable Long id) {
         return ApiResponse.ok(smartLearningService.pathSnapshotDetail(SecurityContextUtil.getUserId(), id));
     }
 
     @GetMapping("/path-recommendation/snapshots")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<List<SmartLearningService.LearningPathSnapshotItem>> pathSnapshots(@RequestParam(required = false) Integer limit) {
+    public ApiResponse<List<SmartLearningVO.LearningPathSnapshotItem>> pathSnapshots(@RequestParam(required = false) Integer limit) {
         return ApiResponse.ok(smartLearningService.pathSnapshots(SecurityContextUtil.getUserId(), limit));
     }
 
