@@ -26,7 +26,7 @@ public interface QbLearningResourceTargetMapper {
             "SELECT DISTINCT r.*, kp.name AS knowledge_point_name, t.tag_name",
             "FROM qb_learning_resource_target rt",
             "JOIN qb_learning_resource r ON r.id = rt.resource_id AND r.is_deleted = 0",
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
+            "LEFT JOIN knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
             "LEFT JOIN qb_tag t ON t.id = r.tag_id AND t.is_deleted = 0",
             "WHERE rt.student_id = #{studentId}",
             "ORDER BY rt.created_at DESC, r.updated_at DESC, r.id DESC",

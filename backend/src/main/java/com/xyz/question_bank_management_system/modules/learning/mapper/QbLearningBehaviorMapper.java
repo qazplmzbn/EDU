@@ -21,7 +21,7 @@ public interface QbLearningBehaviorMapper {
     @Select({
             "SELECT b.*, kp.name AS knowledge_point_name, t.tag_name",
             "FROM qb_learning_behavior b",
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = b.knowledge_point_id AND kp.is_deleted = 0",
+            "LEFT JOIN knowledge_point kp ON kp.id = b.knowledge_point_id AND kp.is_deleted = 0",
             "LEFT JOIN qb_tag t ON t.id = b.tag_id AND t.is_deleted = 0",
             "WHERE b.user_id = #{userId}",
             "ORDER BY b.created_at DESC, b.id DESC",

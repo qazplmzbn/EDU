@@ -8,4 +8,11 @@ public interface AuditLogService {
                 Long entityId,
                 Object beforeData,
                 Object afterData);
+
+    void recordRequired(Long userId,
+                        String action,
+                        String entityType,
+                        Long entityId,
+                        Object beforeData,
+                        Object afterData);
 }

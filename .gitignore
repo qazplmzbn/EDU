@@ -70,3 +70,12 @@ tmp/
 
 # Local PDF documents
 /*.pdf
+
+# Runtime logs
+*.log
+
+# Local reference materials and database baseline exports
+/资料/
+/阶段计划/
+/backups/
+/docs/api/后端接口实施清单.md

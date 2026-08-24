@@ -8,9 +8,12 @@ import java.util.List;
 @Mapper
 public interface QbLearningResourceMapper {
 
+    @Select("SELECT COUNT(*) FROM qb_learning_resource WHERE knowledge_point_id=#{knowledgePointId} AND is_deleted=0")
+    long countActiveByKnowledgePointId(@Param("knowledgePointId") Long knowledgePointId);
+
     @Select("SELECT r.*, kp.name AS knowledge_point_name, t.tag_name " +
             "FROM qb_learning_resource r " +
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0 " +
+            "LEFT JOIN knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0 " +
             "LEFT JOIN qb_tag t ON t.id = r.tag_id AND t.is_deleted = 0 " +
             "WHERE r.id = #{id} AND r.is_deleted = 0")
     QbLearningResource selectById(@Param("id") Long id);
@@ -19,7 +22,7 @@ public interface QbLearningResourceMapper {
             "<script>",
             "SELECT r.*, kp.name AS knowledge_point_name, t.tag_name",
             "FROM qb_learning_resource r",
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
+            "LEFT JOIN knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
             "LEFT JOIN qb_tag t ON t.id = r.tag_id AND t.is_deleted = 0",
             "WHERE r.is_deleted = 0",
             "<if test='keyword != null and keyword != \"\"'>",
@@ -38,7 +41,7 @@ public interface QbLearningResourceMapper {
             "<script>",
             "SELECT r.*, kp.name AS knowledge_point_name, t.tag_name",
             "FROM qb_learning_resource r",
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
+            "LEFT JOIN knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
             "LEFT JOIN qb_tag t ON t.id = r.tag_id AND t.is_deleted = 0",
             "WHERE r.is_deleted = 0 AND r.knowledge_point_id IN",
             "<foreach collection='knowledgePointIds' item='id' open='(' close=')' separator=','>",
@@ -54,7 +57,7 @@ public interface QbLearningResourceMapper {
             "<script>",
             "SELECT r.*, kp.name AS knowledge_point_name, t.tag_name",
             "FROM qb_learning_resource r",
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
+            "LEFT JOIN knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
             "LEFT JOIN qb_tag t ON t.id = r.tag_id AND t.is_deleted = 0",
             "WHERE r.is_deleted = 0 AND r.tag_id IN",
             "<foreach collection='tagIds' item='id' open='(' close=')' separator=','>",
@@ -70,7 +73,7 @@ public interface QbLearningResourceMapper {
             "<script>",
             "SELECT r.*, kp.name AS knowledge_point_name, t.tag_name",
             "FROM qb_learning_resource r",
-            "LEFT JOIN qb_knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
+            "LEFT JOIN knowledge_point kp ON kp.id = r.knowledge_point_id AND kp.is_deleted = 0",
             "LEFT JOIN qb_tag t ON t.id = r.tag_id AND t.is_deleted = 0",
             "WHERE r.is_deleted = 0",
             "AND r.resource_type IN ('video', 'animated_explainer')",

@@ -10,6 +10,7 @@ import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgeRelationMapper;
+import com.xyz.question_bank_management_system.modules.knowledge.mapper.KnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.service.KnowledgeGraphService;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
 import com.xyz.question_bank_management_system.modules.knowledge.vo.KnowledgeGraphExtractionVO;
@@ -38,6 +39,7 @@ public class KnowledgeGraphServiceImpl implements KnowledgeGraphService {
     private static final int MAX_SOURCE_TEXT_LENGTH = 60000;
 
     private final QbKnowledgePointMapper knowledgePointMapper;
+    private final KnowledgePointMapper canonicalKnowledgePointMapper;
     private final QbKnowledgeRelationMapper relationMapper;
     private final LlmService llmService;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -49,7 +51,8 @@ public class KnowledgeGraphServiceImpl implements KnowledgeGraphService {
 
     @Override
     public KnowledgeGraphExtractionVO extract(KnowledgeGraphExtractionRequest request) {
-        List<QbKnowledgePoint> points = knowledgePointMapper.selectAll();
+        List<QbKnowledgePoint> points = canonicalKnowledgePointMapper.selectAll().stream()
+                .map(this::toLegacyProjection).collect(Collectors.toList());
         String prompt = buildPrompt(points, request == null ? null : request.getSourceText());
         QbLlmCall call = llmService.chatCompletion(BIZ_TYPE_KNOWLEDGE_GRAPH, 0L, prompt,
                 request == null ? null : request.getProviderKey());
@@ -121,8 +124,8 @@ public class KnowledgeGraphServiceImpl implements KnowledgeGraphService {
         if (relation.getSourceId().equals(relation.getTargetId())) {
             throw BizException.of(ErrorCode.PARAM_ERROR, "前置知识点和后续知识点不能相同");
         }
-        QbKnowledgePoint source = knowledgePointMapper.selectById(relation.getSourceId());
-        QbKnowledgePoint target = knowledgePointMapper.selectById(relation.getTargetId());
+        com.xyz.question_bank_management_system.modules.knowledge.entity.KnowledgePoint source = canonicalKnowledgePointMapper.selectById(relation.getSourceId());
+        com.xyz.question_bank_management_system.modules.knowledge.entity.KnowledgePoint target = canonicalKnowledgePointMapper.selectById(relation.getTargetId());
         if (source == null || target == null) {
             throw BizException.of(ErrorCode.NOT_FOUND, "知识点不存在");
         }
@@ -131,7 +134,7 @@ public class KnowledgeGraphServiceImpl implements KnowledgeGraphService {
         normalized.setSourceId(source.getId());
         normalized.setTargetId(target.getId());
         normalized.setRelationType(text(relation.getRelationType(), "prerequisite"));
-        normalized.setWeight(clamp(relation.getWeight(), 0.0, 10.0, 1.0));
+        normalized.setWeight(clamp(relation.getWeight(), 0.0, 1.0, 1.0));
         normalized.setConfidence(clamp(relation.getConfidence(), 0.0, 1.0, 1.0));
         normalized.setSourceType(text(relation.getSourceType(), "manual"));
         normalized.setDescription(relation.getDescription());
@@ -143,6 +146,20 @@ public class KnowledgeGraphServiceImpl implements KnowledgeGraphService {
             return fallback;
         }
         return Math.max(min, Math.min(max, value));
+    }
+
+    private QbKnowledgePoint toLegacyProjection(com.xyz.question_bank_management_system.modules.knowledge.entity.KnowledgePoint point) {
+        QbKnowledgePoint projection = new QbKnowledgePoint();
+        projection.setId(point.getId());
+        projection.setName(point.getName());
+        projection.setCode(point.getCode());
+        projection.setParentId(point.getParentId());
+        projection.setLevel(point.getLevel());
+        projection.setDescription(point.getDescription());
+        projection.setCreatedAt(point.getCreatedAt());
+        projection.setUpdatedAt(point.getUpdatedAt());
+        projection.setIsDeleted(point.getIsDeleted());
+        return projection;
     }
 
     private String buildPrompt(List<QbKnowledgePoint> points, String sourceText) {

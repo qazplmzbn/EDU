@@ -6,6 +6,7 @@ import com.xyz.question_bank_management_system.util.LlmSecretCodec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -22,6 +23,7 @@ import java.util.Set;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "app.migration.model-center", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class ModelCenterMigrationRunner implements CommandLineRunner {
 

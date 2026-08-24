@@ -2,10 +2,12 @@ package com.xyz.question_bank_management_system.config;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(prefix = "app.migration.teacher-agent-resource", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class TeacherAgentResourceMigrationRunner implements CommandLineRunner {
 

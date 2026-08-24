@@ -43,6 +43,26 @@ public class AuditLogServiceImpl implements AuditLogService {
         }
     }
 
+    @Override
+    public void recordRequired(Long userId,
+                               String action,
+                               String entityType,
+                               Long entityId,
+                               Object beforeData,
+                               Object afterData) {
+        SysAuditLog logEntity = new SysAuditLog();
+        logEntity.setUserId(userId);
+        logEntity.setAction(action);
+        logEntity.setEntityType(entityType);
+        logEntity.setEntityId(entityId);
+        logEntity.setBeforeJson(toJson(beforeData));
+        logEntity.setAfterJson(toJson(afterData));
+        logEntity.setIpAddr(resolveClientIp());
+        if (sysAuditLogMapper.insert(logEntity) != 1) {
+            throw new IllegalStateException("Failed to write required audit log");
+        }
+    }
+
     private String toJson(Object data) {
         if (data == null) {
             return null;

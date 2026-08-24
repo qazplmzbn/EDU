@@ -6,7 +6,6 @@ import com.xyz.question_bank_management_system.modules.learning.dto.LearningReso
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningPathSnapshotSaveRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PersonalizedPracticeRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PracticeStartRequest;
-import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgePoint;
 import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgeRelation;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningBehavior;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
@@ -36,32 +35,6 @@ public class SmartLearningController {
     private final SmartLearningService smartLearningService;
     private final KnowledgeGraphService knowledgeGraphService;
     private final AttemptService attemptService;
-
-    @GetMapping("/knowledge-points")
-    @PreAuthorize("hasAnyRole('STUDENT','TEACHER','ADMIN')")
-    public ApiResponse<List<QbKnowledgePoint>> knowledgePoints() {
-        return ApiResponse.ok(smartLearningService.knowledgePoints());
-    }
-
-    @PostMapping("/knowledge-points")
-    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<Long> createKnowledgePoint(@RequestBody QbKnowledgePoint point) {
-        return ApiResponse.ok(smartLearningService.createKnowledgePoint(point));
-    }
-
-    @PutMapping("/knowledge-points/{id}")
-    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<Void> updateKnowledgePoint(@PathVariable Long id, @RequestBody QbKnowledgePoint point) {
-        smartLearningService.updateKnowledgePoint(id, point);
-        return ApiResponse.ok();
-    }
-
-    @DeleteMapping("/knowledge-points/{id}")
-    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<Void> deleteKnowledgePoint(@PathVariable Long id) {
-        smartLearningService.deleteKnowledgePoint(id);
-        return ApiResponse.ok();
-    }
 
     @GetMapping("/resources")
     @PreAuthorize("hasAnyRole('STUDENT','TEACHER','ADMIN')")
