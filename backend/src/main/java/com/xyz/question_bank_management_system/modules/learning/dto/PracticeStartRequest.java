@@ -20,7 +20,7 @@ public class PracticeStartRequest {
 
     @Data
     public static class Scope {
-        private List<Long> tagIds;
+        private List<Long> knowledgePointIds;
         private List<String> chapters;
         private List<Integer> questionTypes;
         private List<Long> questionIds;

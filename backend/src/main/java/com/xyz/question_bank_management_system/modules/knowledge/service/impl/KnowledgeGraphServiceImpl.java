@@ -8,7 +8,6 @@ import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowle
 import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
-import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgeRelationMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.KnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.service.KnowledgeGraphService;
@@ -38,7 +37,6 @@ public class KnowledgeGraphServiceImpl implements KnowledgeGraphService {
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024L;
     private static final int MAX_SOURCE_TEXT_LENGTH = 60000;
 
-    private final QbKnowledgePointMapper knowledgePointMapper;
     private final KnowledgePointMapper canonicalKnowledgePointMapper;
     private final QbKnowledgeRelationMapper relationMapper;
     private final LlmService llmService;

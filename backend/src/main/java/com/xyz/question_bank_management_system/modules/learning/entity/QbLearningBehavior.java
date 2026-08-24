@@ -9,13 +9,11 @@ public class QbLearningBehavior {
     private Long id;
     private Long userId;
     private String behaviorType;
+    private String refType;
     private Long refId;
     private Long knowledgePointId;
-    private Long tagId;
     private Integer durationSeconds;
+    private String eventValue;
     private String note;
     private LocalDateTime createdAt;
-
-    private String knowledgePointName;
-    private String tagName;
 }

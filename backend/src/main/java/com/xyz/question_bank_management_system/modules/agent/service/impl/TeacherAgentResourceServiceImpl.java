@@ -9,6 +9,7 @@ import com.xyz.question_bank_management_system.modules.learning.entity.QbLearnin
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceMapper;
+import com.xyz.question_bank_management_system.modules.learning.mapper.ResourceKnowledgeMapper;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
 import com.xyz.question_bank_management_system.modules.profile.service.StageLearningEvaluationService;
 import com.xyz.question_bank_management_system.modules.agent.service.TeacherAgentResourceService;
@@ -86,6 +87,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
     private final StageLearningEvaluationService stageLearningEvaluationService;
     private final LlmService llmService;
     private final QbLearningResourceMapper learningResourceMapper;
+    private final ResourceKnowledgeMapper resourceKnowledgeMapper;
     private final ObjectMapper objectMapper;
     private final Map<String, TaskState> taskStore = new ConcurrentHashMap<>();
 
@@ -579,19 +581,19 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
     }
 
     private List<QbLearningResource> findExistingVideoResources(StageLearningEvaluationVO profile) {
-        List<Long> tagIds = profile.getWeakKnowledgePoints() == null
+        List<Long> knowledgePointIds = profile.getWeakKnowledgePoints() == null
                 ? List.of()
                 : profile.getWeakKnowledgePoints().stream()
-                .map(StageLearningEvaluationVO.WeakKnowledgePoint::getTagId)
+                .map(StageLearningEvaluationVO.WeakKnowledgePoint::getKnowledgePointId)
                 .filter(id -> id != null && id > 0)
                 .distinct()
                 .limit(8)
                 .toList();
         List<String> keywords = videoSearchKeywords(profile);
-        if (tagIds.isEmpty() && keywords.isEmpty()) {
+        if (knowledgePointIds.isEmpty() && keywords.isEmpty()) {
             return List.of();
         }
-        return learningResourceMapper.selectVideoCandidates(tagIds, keywords, 12);
+        return learningResourceMapper.selectVideoCandidates(knowledgePointIds, keywords, 12);
     }
 
     private List<String> videoSearchKeywords(StageLearningEvaluationVO profile) {
@@ -643,8 +645,10 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         draft.setVideoAsset(videoAssetFromResource(resource, profile));
         draft.setVideoRecommendations(List.of(videoRecommendationFromAsset(draft.getVideoAsset())));
         draft.setVideoScenes(existingVideoScenes(resource));
-        draft.setKnowledgePointId(resource.getKnowledgePointId());
-        draft.setTagId(resource.getTagId());
+        Long knowledgePointId = resourceKnowledgeMapper.selectByResourceId(resource.getId()).stream()
+                .filter(relation -> relation.getIsPrimary() != null && relation.getIsPrimary() == 1)
+                .map(relation -> relation.getKnowledgePointId()).findFirst().orElse(null);
+        draft.setKnowledgePointId(knowledgePointId);
         draft.setPersonalizationBasis(existingVideoBasis(profile, resource));
         TeacherAgentResourceGenerateVO.ReviewReport review = new TeacherAgentResourceGenerateVO.ReviewReport();
         review.setQualityScore(86);
@@ -726,8 +730,8 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         basis.put("matchedFrom", "learning_resource_library");
         basis.put("matchedResourceId", resource.getId());
         basis.put("matchedResourceTitle", resource.getTitle());
-        basis.put("matchedResourceTag", resource.getTagName());
-        basis.put("matchedResourceKnowledgePoint", resource.getKnowledgePointName());
+        basis.put("matchedResourceKnowledgePointIds", resourceKnowledgeMapper.selectByResourceId(resource.getId()).stream()
+                .map(relation -> relation.getKnowledgePointId()).toList());
         return basis;
     }
 
@@ -763,8 +767,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
 
     private TeacherAgentResourceGenerateVO.VideoAsset videoAssetFromResource(QbLearningResource resource,
                                                                              StageLearningEvaluationVO profile) {
-        String focus = firstNonBlank(resource.getKnowledgePointName(), resource.getTagName(),
-                weakPointNames(profile).stream().findFirst().orElse("C语言薄弱知识点"));
+        String focus = weakPointNames(profile).stream().findFirst().orElse("薄弱知识点");
         TeacherAgentResourceGenerateVO.VideoAsset asset = new TeacherAgentResourceGenerateVO.VideoAsset();
         asset.setTitle(resource.getTitle());
         asset.setPlatform(videoPlatform(resource.getUrl()));
@@ -1114,7 +1117,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
             return List.of();
         }
         return profile.getWeakKnowledgePoints().stream()
-                .map(StageLearningEvaluationVO.WeakKnowledgePoint::getTagName)
+                .map(StageLearningEvaluationVO.WeakKnowledgePoint::getKnowledgePointName)
                 .filter(StringUtils::hasText)
                 .distinct()
                 .limit(4)
@@ -1899,7 +1902,6 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
                         }
                       ],
                       "knowledgePointId": null,
-                      "tagId": null,
                       "personalizationBasis": {
                         "studentName": "学生姓名",
                         "weakPoints": ["薄弱点"],
@@ -2221,7 +2223,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
     private Map<String, Object> defaultBasis(StageLearningEvaluationVO profile) {
         Map<String, Object> basis = new LinkedHashMap<>();
         basis.put("studentName", profile.getStudentName());
-        basis.put("weakPoints", profile.getWeakKnowledgePoints().stream().map(StageLearningEvaluationVO.WeakKnowledgePoint::getTagName).toList());
+        basis.put("weakPoints", profile.getWeakKnowledgePoints().stream().map(StageLearningEvaluationVO.WeakKnowledgePoint::getKnowledgePointName).toList());
         basis.put("weakDimensions", profile.getDimensions().stream().map(StageLearningEvaluationVO.Dimension::getName).toList());
         basis.put("reason", profile.getSummary());
         return basis;

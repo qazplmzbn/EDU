@@ -3,7 +3,7 @@ package com.xyz.question_bank_management_system.modules.learning.vo;
 import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgePoint;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningBehavior;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbTagMastery;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import lombok.Data;
 
 import java.util.List;
@@ -19,7 +19,7 @@ public final class SmartLearningVO {
         private Integer abilityScore;
         private Long behaviorCount;
         private Long studyDurationSeconds;
-        private List<QbTagMastery> mastery;
+        private List<StudentKnowledgeState> mastery;
         private List<QbKnowledgePoint> weakPoints;
         private List<QbLearningBehavior> recentBehaviors;
         private String advice;

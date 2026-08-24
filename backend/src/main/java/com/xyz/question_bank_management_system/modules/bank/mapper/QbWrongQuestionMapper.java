@@ -29,16 +29,16 @@ public interface QbWrongQuestionMapper {
             "<if test='isResolved != null'>",
             "  AND w.is_resolved = #{isResolved}",
             "</if>",
-            "<if test='tagId != null'>",
+            "<if test='knowledgePointId != null'>",
             "  AND EXISTS (",
-            "    SELECT 1 FROM qb_question_tag qt",
-            "    WHERE qt.question_id = w.question_id AND qt.tag_id = #{tagId}",
+            "    SELECT 1 FROM question_knowledge qk",
+            "    WHERE qk.question_id = w.question_id AND qk.knowledge_point_id = #{knowledgePointId}",
             "  )",
             "</if>",
             "</script>"
     })
     long countByFilter(@Param("userId") Long userId,
-                       @Param("tagId") Long tagId,
+                       @Param("knowledgePointId") Long knowledgePointId,
                        @Param("chapter") String chapter,
                        @Param("isResolved") Integer isResolved);
 
@@ -54,10 +54,10 @@ public interface QbWrongQuestionMapper {
             "<if test='isResolved != null'>",
             "  AND w.is_resolved = #{isResolved}",
             "</if>",
-            "<if test='tagId != null'>",
+            "<if test='knowledgePointId != null'>",
             "  AND EXISTS (",
-            "    SELECT 1 FROM qb_question_tag qt",
-            "    WHERE qt.question_id = w.question_id AND qt.tag_id = #{tagId}",
+            "    SELECT 1 FROM question_knowledge qk",
+            "    WHERE qk.question_id = w.question_id AND qk.knowledge_point_id = #{knowledgePointId}",
             "  )",
             "</if>",
             "ORDER BY w.last_wrong_at DESC, w.question_id DESC",
@@ -65,7 +65,7 @@ public interface QbWrongQuestionMapper {
             "</script>"
     })
     List<QbWrongQuestion> pageByFilter(@Param("userId") Long userId,
-                                       @Param("tagId") Long tagId,
+                                       @Param("knowledgePointId") Long knowledgePointId,
                                        @Param("chapter") String chapter,
                                        @Param("isResolved") Integer isResolved,
                                        @Param("offset") long offset,

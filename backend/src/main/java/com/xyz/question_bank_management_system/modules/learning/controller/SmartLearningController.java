@@ -3,6 +3,7 @@ package com.xyz.question_bank_management_system.modules.learning.controller;
 import com.xyz.question_bank_management_system.common.ApiResponse;
 import com.xyz.question_bank_management_system.modules.knowledge.dto.KnowledgeGraphExtractionRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceRecommendRequest;
+import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceUpsertRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningPathSnapshotSaveRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PersonalizedPracticeRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PracticeStartRequest;
@@ -46,8 +47,8 @@ public class SmartLearningController {
 
     @PostMapping("/resources")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<Long> createResource(@RequestBody QbLearningResource resource) {
-        return ApiResponse.ok(smartLearningService.createResource(resource, SecurityContextUtil.getUserId()));
+    public ApiResponse<Long> createResource(@RequestBody LearningResourceUpsertRequest request) {
+        return ApiResponse.ok(smartLearningService.createResource(request, SecurityContextUtil.getUserId()));
     }
 
     @PostMapping("/resources/{id}/recommend-targets")
@@ -59,8 +60,8 @@ public class SmartLearningController {
 
     @PutMapping("/resources/{id}")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<Void> updateResource(@PathVariable Long id, @RequestBody QbLearningResource resource) {
-        smartLearningService.updateResource(id, resource);
+    public ApiResponse<Void> updateResource(@PathVariable Long id, @RequestBody LearningResourceUpsertRequest request) {
+        smartLearningService.updateResource(id, request);
         return ApiResponse.ok();
     }
 

@@ -15,9 +15,9 @@ import com.xyz.question_bank_management_system.modules.bank.mapper.*;
 import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbTagMasteryMapper;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbTagMastery;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.bank.service.AttemptService;
 import com.xyz.question_bank_management_system.modules.user.service.AuditLogService;
@@ -61,7 +61,7 @@ public class AttemptServiceImpl implements AttemptService {
     private static final double ADAPTIVE_MIN_SIGMOID = 0.01;
     private static final double ADAPTIVE_MAX_SIGMOID = 0.99;
     private static final double ADAPTIVE_MATCH_WEIGHT = 0.62;
-    private static final double ADAPTIVE_WEAK_TAG_WEIGHT = 0.20;
+    private static final double ADAPTIVE_WEAK_KNOWLEDGE_WEIGHT = 0.20;
     private static final double ADAPTIVE_WRONG_WEIGHT = 0.14;
     private static final double ADAPTIVE_NOVELTY_WEIGHT = 0.06;
     private static final double ADAPTIVE_RANDOM_JITTER = 0.02;
@@ -76,13 +76,13 @@ public class AttemptServiceImpl implements AttemptService {
     private final QbPaperQuestionMapper paperQuestionMapper;
     private final QbQuestionMapper questionMapper;
     private final QbQuestionOptionMapper optionMapper;
-    private final QbQuestionTagMapper questionTagMapper;
+    private final QuestionKnowledgeMapper questionKnowledgeMapper;
     private final QbClassMemberMapper classMemberMapper;
     private final QbLlmCallMapper llmCallMapper;
 
     private final QbQuestionUserStatMapper questionUserStatMapper;
     private final QbWrongQuestionMapper wrongQuestionMapper;
-    private final QbTagMasteryMapper tagMasteryMapper;
+    private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
     private final QbUserAbilityMapper userAbilityMapper;
     private final UserAbilityService userAbilityService;
 
@@ -162,12 +162,9 @@ public class AttemptServiceImpl implements AttemptService {
             Map<String, Object> snap = readSnapshotMap(snapshotJson);
             Integer qt = asInt(snap.get("questionType"));
             Integer diff = asInt(snap.get("difficulty"));
-            Object tagIdsObj = snap.get("tagIds");
-            String tagIdsJson = null;
+            String knowledgeSnapshotJson = "[]";
             try {
-                if (tagIdsObj != null) {
-                    tagIdsJson = objectMapper.writeValueAsString(tagIdsObj);
-                }
+                knowledgeSnapshotJson = serializeKnowledgeSnapshot(pq.getQuestionId());
             } catch (Exception ignore) {}
 
             QbAttemptQuestion aq = new QbAttemptQuestion();
@@ -179,7 +176,7 @@ public class AttemptServiceImpl implements AttemptService {
             aq.setSnapshotHash(snapshotHash);
             aq.setQuestionType(qt);
             aq.setDifficulty(diff);
-            aq.setTagIdsJson(tagIdsJson);
+            aq.setKnowledgeSnapshotJson(knowledgeSnapshotJson);
             aqList.add(aq);
             order++;
         }
@@ -201,7 +198,7 @@ public class AttemptServiceImpl implements AttemptService {
         String mode = normalizePracticeMode(request.getMode());
         int totalScore = normalizePracticeTotalScore(request.getTotalScore());
 
-        List<Long> tagIds = normalizeLongList(request.getScope() == null ? null : request.getScope().getTagIds());
+        List<Long> knowledgePointIds = normalizeLongList(request.getScope() == null ? null : request.getScope().getKnowledgePointIds());
         List<String> chapters = normalizeStringList(request.getScope() == null ? null : request.getScope().getChapters());
         List<Integer> questionTypes = normalizeQuestionTypes(request.getScope() == null ? null : request.getScope().getQuestionTypes());
         List<Long> questionIds = normalizeLongList(request.getScope() == null ? null : request.getScope().getQuestionIds());
@@ -215,7 +212,7 @@ public class AttemptServiceImpl implements AttemptService {
             List<QbQuestion> rankedCandidates = selectAdaptivePracticeQuestions(
                     userId,
                     candidateQuestionLimit,
-                    tagIds,
+                    knowledgePointIds,
                     chapters,
                     questionTypes,
                     visibleTeacherIds
@@ -223,7 +220,7 @@ public class AttemptServiceImpl implements AttemptService {
             selected = pickPracticeQuestionsByScore(rankedCandidates, totalScore);
         } else {
             long candidateLimit = Math.max(candidateQuestionLimit * 5L, 50L);
-            List<QbQuestion> candidates = questionMapper.searchForPractice(tagIds, chapters, questionTypes, visibleTeacherIds, candidateLimit);
+            List<QbQuestion> candidates = questionMapper.searchForPractice(knowledgePointIds, chapters, questionTypes, visibleTeacherIds, candidateLimit);
             if (candidates == null || candidates.isEmpty()) {
                 throw BizException.of(ErrorCode.BIZ_ERROR, "\u5f53\u524d\u7b5b\u9009\u8303\u56f4\u5185\u6ca1\u6709\u53ef\u7528\u7684\u5df2\u53d1\u5e03\u9898\u76ee");
             }
@@ -251,12 +248,11 @@ public class AttemptServiceImpl implements AttemptService {
         for (QbQuestion q : selected) {
             String snapshotJson = repairSnapshotMojibake(buildQuestionSnapshot(q.getId()));
             String snapshotHash = HashUtil.sha256(snapshotJson);
-            List<Long> qTagIds = questionTagMapper.selectTagIdsByQuestionId(q.getId());
-            String tagIdsJson;
+            String knowledgeSnapshotJson;
             try {
-                tagIdsJson = objectMapper.writeValueAsString(qTagIds);
+                knowledgeSnapshotJson = serializeKnowledgeSnapshot(q.getId());
             } catch (Exception e) {
-                tagIdsJson = "[]";
+                knowledgeSnapshotJson = "[]";
             }
 
             QbAttemptQuestion aq = new QbAttemptQuestion();
@@ -268,7 +264,7 @@ public class AttemptServiceImpl implements AttemptService {
             aq.setSnapshotHash(snapshotHash);
             aq.setQuestionType(q.getQuestionType());
             aq.setDifficulty(q.getDifficulty());
-            aq.setTagIdsJson(tagIdsJson);
+            aq.setKnowledgeSnapshotJson(knowledgeSnapshotJson);
             aqList.add(aq);
             orderNo++;
         }
@@ -858,7 +854,7 @@ public class AttemptServiceImpl implements AttemptService {
             }
 
             List<QbQuestionOption> options = optionMapper.selectByQuestionId(questionId);
-            List<Long> tagIds = questionTagMapper.selectTagIdsByQuestionId(questionId);
+            List<Map<String, Object>> knowledgeRelations = knowledgeSnapshotRelations(questionId);
 
             Map<String, Object> snapshot = new LinkedHashMap<>();
             snapshot.put("id", q.getId());
@@ -872,7 +868,7 @@ public class AttemptServiceImpl implements AttemptService {
             snapshot.put("analysisText", q.getAnalysisText());
             snapshot.put("analysisSource", q.getAnalysisSource());
             snapshot.put("llmAnalyses", buildQuestionLlmAnalyses(questionId));
-            snapshot.put("tagIds", tagIds);
+            snapshot.put("knowledgeRelations", knowledgeRelations);
             snapshot.put("options", options);
             return objectMapper.writeValueAsString(snapshot);
         } catch (BizException e) {
@@ -949,12 +945,12 @@ public class AttemptServiceImpl implements AttemptService {
 
     private List<QbQuestion> selectAdaptivePracticeQuestions(Long userId,
                                                              int questionCount,
-                                                             List<Long> tagIds,
+                                                             List<Long> knowledgePointIds,
                                                              List<String> chapters,
                                                              List<Integer> questionTypes,
                                                              List<Long> visibleTeacherIds) {
         long candidateLimit = Math.min(600L, Math.max(questionCount * 8L, 80L));
-        List<QbQuestion> candidates = questionMapper.searchForPractice(tagIds, chapters, questionTypes, visibleTeacherIds, candidateLimit);
+        List<QbQuestion> candidates = questionMapper.searchForPractice(knowledgePointIds, chapters, questionTypes, visibleTeacherIds, candidateLimit);
         if (candidates == null || candidates.isEmpty()) {
             throw BizException.of(ErrorCode.BIZ_ERROR, "\u5f53\u524d\u7b5b\u9009\u8303\u56f4\u5185\u6ca1\u6709\u53ef\u7528\u7684\u5df2\u53d1\u5e03\u9898\u76ee");
         }
@@ -988,25 +984,25 @@ public class AttemptServiceImpl implements AttemptService {
             }
         }
 
-        Map<Long, List<Long>> tagIdsByQuestionId = new HashMap<>();
-        List<QbQuestionTagLink> tagLinks = questionTagMapper.selectLinksByQuestionIds(questionIds);
-        if (tagLinks != null) {
-            for (QbQuestionTagLink link : tagLinks) {
-                if (link == null || link.getQuestionId() == null || link.getTagId() == null) {
+        Map<Long, List<Long>> knowledgePointIdsByQuestionId = new HashMap<>();
+        List<QuestionKnowledge> knowledgeLinks = questionKnowledgeMapper.selectByQuestionIds(questionIds);
+        if (knowledgeLinks != null) {
+            for (QuestionKnowledge link : knowledgeLinks) {
+                if (link == null || link.getQuestionId() == null || link.getKnowledgePointId() == null) {
                     continue;
                 }
-                tagIdsByQuestionId.computeIfAbsent(link.getQuestionId(), k -> new ArrayList<>()).add(link.getTagId());
+                knowledgePointIdsByQuestionId.computeIfAbsent(link.getQuestionId(), k -> new ArrayList<>()).add(link.getKnowledgePointId());
             }
         }
 
-        Map<Long, Double> masteryByTagId = new HashMap<>();
-        List<QbTagMastery> masteryRows = tagMasteryMapper.selectByUserIdAndTagType(userId, null);
+        Map<Long, Double> masteryByKnowledgePointId = new HashMap<>();
+        List<StudentKnowledgeState> masteryRows = studentKnowledgeStateMapper.selectByUserId(userId);
         if (masteryRows != null) {
-            for (QbTagMastery row : masteryRows) {
-                if (row == null || row.getTagId() == null || row.getMasteryValue() == null) {
+            for (StudentKnowledgeState row : masteryRows) {
+                if (row == null || row.getKnowledgePointId() == null || row.getMasteryValue() == null) {
                     continue;
                 }
-                masteryByTagId.put(row.getTagId(), clamp01(row.getMasteryValue()));
+                masteryByKnowledgePointId.put(row.getKnowledgePointId(), clamp01(row.getMasteryValue().doubleValue()));
             }
         }
 
@@ -1024,13 +1020,13 @@ public class AttemptServiceImpl implements AttemptService {
             double successProb = sigmoid(theta - beta);
             double abilityMatch = 1.0 - Math.min(1.0, Math.abs(successProb - ADAPTIVE_TARGET_SUCCESS_RATE) / ADAPTIVE_TARGET_SUCCESS_RATE);
 
-            List<Long> qTagIds = tagIdsByQuestionId.get(qid);
-            double weakTagPressure = 0.0;
-            if (qTagIds != null && !qTagIds.isEmpty()) {
+            List<Long> qKnowledgePointIds = knowledgePointIdsByQuestionId.get(qid);
+            double weakKnowledgePressure = 0.0;
+            if (qKnowledgePointIds != null && !qKnowledgePointIds.isEmpty()) {
                 double sum = 0.0;
                 int cnt = 0;
-                for (Long tagId : qTagIds) {
-                    Double mastery = masteryByTagId.get(tagId);
+                for (Long knowledgePointId : qKnowledgePointIds) {
+                    Double mastery = masteryByKnowledgePointId.get(knowledgePointId);
                     if (mastery == null) {
                         continue;
                     }
@@ -1038,10 +1034,9 @@ public class AttemptServiceImpl implements AttemptService {
                     cnt++;
                 }
                 if (cnt > 0) {
-                    weakTagPressure = sum / cnt;
+                    weakKnowledgePressure = sum / cnt;
                 } else {
-                    // Unknown tags are treated as moderate weak points to preserve exploration.
-                    weakTagPressure = 0.35;
+                    weakKnowledgePressure = 0.35;
                 }
             }
 
@@ -1053,7 +1048,7 @@ public class AttemptServiceImpl implements AttemptService {
 
             double adaptiveScore =
                     ADAPTIVE_MATCH_WEIGHT * abilityMatch
-                            + ADAPTIVE_WEAK_TAG_WEIGHT * weakTagPressure
+                            + ADAPTIVE_WEAK_KNOWLEDGE_WEIGHT * weakKnowledgePressure
                             + ADAPTIVE_WRONG_WEIGHT * wrongBoost
                             + ADAPTIVE_NOVELTY_WEIGHT * novelty
                             + jitter;
@@ -1189,20 +1184,19 @@ public class AttemptServiceImpl implements AttemptService {
     private void updateStats(Long userId, QbAttemptQuestion aq, int correctInc, LocalDateTime at) {
         questionUserStatMapper.upsert(userId, aq.getQuestionId(), correctInc, at);
 
-        List<Long> tagIds = parseTagIds(aq.getTagIdsJson());
-        if (tagIds != null) {
-            for (Long tid : tagIds) {
-                if (tid == null) continue;
-                double init = correctInc; // Initialize the first mastery sample with this result.
-                tagMasteryMapper.upsertAttempt(userId, tid, correctInc, init);
-            }
+        for (Long knowledgePointId : parseKnowledgePointIds(aq.getKnowledgeSnapshotJson())) {
+            if (knowledgePointId == null) continue;
+            double init = correctInc;
+            String level = correctInc > 0 ? "mastered" : "weak";
+            studentKnowledgeStateMapper.upsertAttempt(userId, knowledgePointId, correctInc, init, level, 0.1);
         }
     }
 
-    private List<Long> parseTagIds(String tagIdsJson) {
-        if (tagIdsJson == null || tagIdsJson.isBlank()) return Collections.emptyList();
+    private List<Long> parseKnowledgePointIds(String knowledgeSnapshotJson) {
+        if (knowledgeSnapshotJson == null || knowledgeSnapshotJson.isBlank()) return Collections.emptyList();
         try {
-            return objectMapper.readValue(tagIdsJson, new TypeReference<List<Long>>() {});
+            List<Map<String, Object>> relations = objectMapper.readValue(knowledgeSnapshotJson, new TypeReference<List<Map<String, Object>>>() {});
+            return relations.stream().map(item -> asLong(item.get("knowledgePointId"))).filter(Objects::nonNull).distinct().toList();
         } catch (Exception e) {
             return Collections.emptyList();
         }
@@ -1225,6 +1219,33 @@ public class AttemptServiceImpl implements AttemptService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private Long asLong(Object obj) {
+        if (obj == null) return null;
+        if (obj instanceof Number number) return number.longValue();
+        try {
+            return Long.parseLong(String.valueOf(obj));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String serializeKnowledgeSnapshot(Long questionId) throws Exception {
+        return objectMapper.writeValueAsString(knowledgeSnapshotRelations(questionId));
+    }
+
+    private List<Map<String, Object>> knowledgeSnapshotRelations(Long questionId) {
+        return questionKnowledgeMapper.selectByQuestionId(questionId).stream().map(relation -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("knowledgePointId", relation.getKnowledgePointId());
+            item.put("weight", relation.getWeight());
+            item.put("relationType", relation.getRelationType());
+            item.put("isPrimary", relation.getIsPrimary());
+            item.put("confidence", relation.getConfidence());
+            item.put("sourceType", relation.getSourceType());
+            return item;
+        }).toList();
     }
 
     private double difficultyToBeta(Integer difficulty) {

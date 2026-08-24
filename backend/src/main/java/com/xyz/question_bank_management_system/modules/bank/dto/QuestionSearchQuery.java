@@ -12,10 +12,10 @@ public class QuestionSearchQuery {
     private Integer questionType;
     private Integer status;
     private Integer bankReviewStatus;
-    /** single tag filter */
-    private Long tagId;
-    /** multi-tag OR filter */
-    private List<Long> tagIds;
+    /** single knowledge point filter */
+    private Long knowledgePointId;
+    /** multi-knowledge-point OR filter */
+    private List<Long> knowledgePointIds;
     /** creator filter */
     private Long createdBy;
 

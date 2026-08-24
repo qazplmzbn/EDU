@@ -5,11 +5,13 @@ import com.xyz.question_bank_management_system.modules.bank.mapper.*;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningBehavior;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningPathSnapshot;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
+import com.xyz.question_bank_management_system.modules.learning.entity.ResourceKnowledge;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResourceTarget;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningBehaviorMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningPathSnapshotMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceTargetMapper;
+import com.xyz.question_bank_management_system.modules.learning.mapper.ResourceKnowledgeMapper;
 import com.xyz.question_bank_management_system.modules.learning.service.SmartLearningService;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
@@ -18,14 +20,15 @@ import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowle
 import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgeRelation;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgeRelationMapper;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbTagMastery;
 import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbTagMasteryMapper;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
 import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceRecommendRequest;
+import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceUpsertRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningPathSnapshotSaveRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PersonalizedPracticeRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PracticeStartRequest;
@@ -37,6 +40,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -61,7 +65,7 @@ public class SmartLearningServiceImpl implements SmartLearningService {
     private final QbKnowledgePointMapper knowledgePointMapper;
     private final QbLearningResourceMapper resourceMapper;
     private final QbLearningBehaviorMapper behaviorMapper;
-    private final QbTagMasteryMapper tagMasteryMapper;
+    private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
     private final QbUserAbilityMapper userAbilityMapper;
     private final QbAttemptMapper attemptMapper;
     private final QbLlmCallMapper llmCallMapper;
@@ -69,6 +73,7 @@ public class SmartLearningServiceImpl implements SmartLearningService {
     private final QbKnowledgeRelationMapper knowledgeRelationMapper;
     private final QbLearningPathSnapshotMapper learningPathSnapshotMapper;
     private final QbLearningResourceTargetMapper resourceTargetMapper;
+    private final ResourceKnowledgeMapper resourceKnowledgeMapper;
     private final QbClassMemberMapper classMemberMapper;
     private final QbClassMapper classMapper;
     private final LlmService llmService;
@@ -101,7 +106,6 @@ public class SmartLearningServiceImpl implements SmartLearningService {
 
     public Long createKnowledgePoint(QbKnowledgePoint point) {
         if (point.getLevel() == null) point.setLevel(1);
-        if (point.getSortOrder() == null) point.setSortOrder(0);
         knowledgePointMapper.insert(point);
         return point.getId();
     }
@@ -119,12 +123,15 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         return resourceMapper.selectList(keyword, knowledgePointId, normalizeLimit(limit, 50));
     }
 
-    public Long createResource(QbLearningResource resource, Long operatorId) {
+    @Transactional
+    public Long createResource(LearningResourceUpsertRequest request, Long operatorId) {
+        QbLearningResource resource = toResource(request);
         resource.setCreatedBy(operatorId);
         if (!StringUtils.hasText(resource.getAuditStatus())) {
             resource.setAuditStatus("manual");
         }
         resourceMapper.insert(resource);
+        replaceResourceKnowledge(resource.getId(), request.getKnowledgePointIds());
         return resource.getId();
     }
 
@@ -186,13 +193,57 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         return result;
     }
 
-    public void updateResource(Long id, QbLearningResource resource) {
+    @Transactional
+    public void updateResource(Long id, LearningResourceUpsertRequest request) {
+        if (resourceMapper.selectById(id) == null) {
+            throw BizException.of(ErrorCode.NOT_FOUND, "Learning resource not found");
+        }
+        QbLearningResource resource = toResource(request);
         resource.setId(id);
         resourceMapper.update(resource);
+        replaceResourceKnowledge(id, request.getKnowledgePointIds());
     }
 
     public void deleteResource(Long id) {
         resourceMapper.softDelete(id);
+    }
+
+    private QbLearningResource toResource(LearningResourceUpsertRequest request) {
+        QbLearningResource resource = new QbLearningResource();
+        resource.setTitle(request.getTitle());
+        resource.setResourceType(text(request.getResourceType(), "article"));
+        resource.setResourcePurpose(text(request.getResourcePurpose(), "learn"));
+        resource.setUrl(request.getUrl());
+        resource.setSummary(request.getSummary());
+        resource.setContent(request.getContent());
+        resource.setDifficulty(request.getDifficulty());
+        resource.setGenerationType(text(request.getGenerationType(), "manual"));
+        resource.setVersion(request.getVersion());
+        resource.setPersonalizationBasis(request.getPersonalizationBasis());
+        resource.setReviewReportJson(request.getReviewReportJson());
+        resource.setModelSourceJson(request.getModelSourceJson());
+        resource.setAuditStatus(text(request.getAuditStatus(), "manual"));
+        resource.setAgentTaskId(request.getAgentTaskId());
+        return resource;
+    }
+
+    private void replaceResourceKnowledge(Long resourceId, List<Long> knowledgePointIds) {
+        resourceKnowledgeMapper.deleteByResourceId(resourceId);
+        List<Long> ids = knowledgePointIds == null ? Collections.emptyList() : knowledgePointIds.stream()
+                .filter(Objects::nonNull).distinct().collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return;
+        }
+        List<ResourceKnowledge> relations = new ArrayList<>();
+        for (int index = 0; index < ids.size(); index++) {
+            ResourceKnowledge relation = new ResourceKnowledge();
+            relation.setKnowledgePointId(ids.get(index));
+            relation.setRelationType("cover");
+            relation.setCoverageWeight(java.math.BigDecimal.ONE);
+            relation.setIsPrimary(index == 0 ? 1 : 0);
+            relations.add(relation);
+        }
+        resourceKnowledgeMapper.batchInsert(resourceId, relations);
     }
 
     public Long recordBehavior(QbLearningBehavior behavior, Long userId) {
@@ -202,7 +253,7 @@ public class SmartLearningServiceImpl implements SmartLearningService {
     }
 
     public LearningProfile profile(Long userId) {
-        List<QbTagMastery> mastery = tagMasteryMapper.selectByUserIdAndTagType(userId, null);
+        List<StudentKnowledgeState> mastery = studentKnowledgeStateMapper.selectByUserId(userId);
         List<QbKnowledgePoint> weakPoints = knowledgePointMapper.selectWeakest(userId, 6);
         QbUserAbility ability = userAbilityMapper.selectByUserId(userId);
         LearningProfile profile = new LearningProfile();
@@ -269,9 +320,11 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         List<QbLearningResource> resources = pathPointIds.isEmpty()
                 ? Collections.emptyList()
                 : resourceMapper.selectByKnowledgePointIds(pathPointIds, 30);
-        Map<Long, List<QbLearningResource>> resourcesByPoint = resources.stream()
-                .filter(resource -> resource.getKnowledgePointId() != null)
-                .collect(Collectors.groupingBy(QbLearningResource::getKnowledgePointId, LinkedHashMap::new, Collectors.toList()));
+        Map<Long, List<QbLearningResource>> resourcesByPoint = new LinkedHashMap<>();
+        for (QbLearningResource resource : resources) {
+            resourceKnowledgeMapper.selectByResourceId(resource.getId()).forEach(relation ->
+                    resourcesByPoint.computeIfAbsent(relation.getKnowledgePointId(), ignored -> new ArrayList<>()).add(resource));
+        }
 
         LearningPathRecommendation recommendation = new LearningPathRecommendation();
         recommendation.setStage(normalizedStage);
@@ -880,20 +933,20 @@ public class SmartLearningServiceImpl implements SmartLearningService {
 
     public PersonalizedPracticePlanVO personalizedPracticePlan(Long userId, PersonalizedPracticeRequest request) {
         List<QbKnowledgePoint> weakPoints = knowledgePointMapper.selectWeakest(userId, 5);
-        List<Long> tagIds = weakPoints.stream()
-                .map(QbKnowledgePoint::getTagId)
+        List<Long> knowledgePointIds = weakPoints.stream()
+                .map(QbKnowledgePoint::getId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toList());
 
         PersonalizedPracticePlanVO plan = new PersonalizedPracticePlanVO();
         plan.setWeakPoints(weakPoints);
-        plan.setTagIds(tagIds);
+        plan.setKnowledgePointIds(knowledgePointIds);
         plan.setMode(text(request == null ? null : request.getMode(), "adaptive"));
         plan.setTotalScore(normalizeTotalScore(request == null ? null : request.getTotalScore()));
-        plan.setReason(tagIds.isEmpty()
-                ? "No weak knowledge tags yet. The system will fall back to the general practice question pool."
-                : "Practice will focus on weak knowledge tags from the current learner profile.");
+        plan.setReason(knowledgePointIds.isEmpty()
+                ? "No weak knowledge points yet. The system will fall back to the general practice question pool."
+                : "Practice will focus on weak knowledge points from the current learner profile.");
         return plan;
     }
 
@@ -902,9 +955,9 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         PracticeStartRequest practice = new PracticeStartRequest();
         practice.setMode(plan.getMode());
         practice.setTotalScore(plan.getTotalScore());
-        if (plan.getTagIds() != null && !plan.getTagIds().isEmpty()) {
+        if (plan.getKnowledgePointIds() != null && !plan.getKnowledgePointIds().isEmpty()) {
             PracticeStartRequest.Scope scope = new PracticeStartRequest.Scope();
-            scope.setTagIds(plan.getTagIds());
+            scope.setKnowledgePointIds(plan.getKnowledgePointIds());
             practice.setScope(scope);
         }
         return practice;
@@ -1631,4 +1684,3 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         }
     }
 }
-

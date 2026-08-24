@@ -88,15 +88,15 @@ public class StageLearningEvaluationVO {
     }
 
     public static class WeakKnowledgePoint {
-        private Long tagId;
-        private String tagName;
+        private Long knowledgePointId;
+        private String knowledgePointName;
         private Double masteryValue;
         private Integer attemptCount;
 
-        public Long getTagId() { return tagId; }
-        public void setTagId(Long tagId) { this.tagId = tagId; }
-        public String getTagName() { return tagName; }
-        public void setTagName(String tagName) { this.tagName = tagName; }
+        public Long getKnowledgePointId() { return knowledgePointId; }
+        public void setKnowledgePointId(Long knowledgePointId) { this.knowledgePointId = knowledgePointId; }
+        public String getKnowledgePointName() { return knowledgePointName; }
+        public void setKnowledgePointName(String knowledgePointName) { this.knowledgePointName = knowledgePointName; }
         public Double getMasteryValue() { return masteryValue; }
         public void setMasteryValue(Double masteryValue) { this.masteryValue = masteryValue; }
         public Integer getAttemptCount() { return attemptCount; }

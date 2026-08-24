@@ -34,7 +34,7 @@ public interface QbQuestionMapper {
 
     long count(@Param("q") QuestionSearchQuery q);
 
-    List<QbQuestion> searchForPractice(@Param("tagIds") List<Long> tagIds,
+    List<QbQuestion> searchForPractice(@Param("knowledgePointIds") List<Long> knowledgePointIds,
                                        @Param("chapters") List<String> chapters,
                                        @Param("questionTypes") List<Integer> questionTypes,
                                        @Param("visibleTeacherIds") List<Long> visibleTeacherIds,

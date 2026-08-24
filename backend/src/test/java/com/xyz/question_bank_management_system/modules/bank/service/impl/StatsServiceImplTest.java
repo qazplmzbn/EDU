@@ -2,13 +2,13 @@ package com.xyz.question_bank_management_system.modules.bank.service.impl;
 
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestionUserStat;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbTagMastery;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbWrongQuestion;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionUserStatMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbTagMasteryMapper;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbWrongQuestionMapper;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ class StatsServiceImplTest {
     @Mock
     private QbQuestionUserStatMapper questionUserStatMapper;
     @Mock
-    private QbTagMasteryMapper tagMasteryMapper;
+    private StudentKnowledgeStateMapper studentKnowledgeStateMapper;
     @Mock
     private QbUserAbilityMapper userAbilityMapper;
 
@@ -86,23 +86,17 @@ class StatsServiceImplTest {
     }
 
     @Test
-    void mastery_shouldUseDefaultKnowledgeTagTypeWhenMissing() {
-        QbTagMastery row = new QbTagMastery();
-        row.setTagId(1L);
-        row.setTagName("pointer");
-        when(tagMasteryMapper.selectByUserIdAndTagType(1001L, 1)).thenReturn(List.of(row));
+    void mastery_shouldReturnKnowledgeStates() {
+        StudentKnowledgeState row = new StudentKnowledgeState();
+        row.setKnowledgePointId(1L);
+        row.setMasteryLevel("basic");
+        when(studentKnowledgeStateMapper.selectByUserId(1001L)).thenReturn(List.of(row));
 
-        List<QbTagMastery> list = statsService.mastery(1001L, null);
+        List<StudentKnowledgeState> list = statsService.mastery(1001L);
 
         assertEquals(1, list.size());
-        assertEquals("pointer", list.get(0).getTagName());
-        verify(tagMasteryMapper).selectByUserIdAndTagType(1001L, 1);
-    }
-
-    @Test
-    void mastery_shouldRejectInvalidTagType() {
-        BizException ex = assertThrows(BizException.class, () -> statsService.mastery(1001L, 9));
-        assertEquals(ErrorCode.PARAM_ERROR, ex.getCode());
+        assertEquals("basic", list.get(0).getMasteryLevel());
+        verify(studentKnowledgeStateMapper).selectByUserId(1001L);
     }
 
     @Test

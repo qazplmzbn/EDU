@@ -3,6 +3,7 @@ package com.xyz.question_bank_management_system.modules.learning.service;
 import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgePoint;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningPathSnapshotSaveRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceRecommendRequest;
+import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceUpsertRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PersonalizedPracticeRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.PracticeStartRequest;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningBehavior;
@@ -30,7 +31,7 @@ public interface SmartLearningService {
 
     List<QbLearningResource> resources(String keyword, Long knowledgePointId, Integer limit);
 
-    Long createResource(QbLearningResource resource, Long operatorId);
+    Long createResource(LearningResourceUpsertRequest request, Long operatorId);
 
     ResourceRecommendationPublishResult recommendResourceTargets(
             Long resourceId,
@@ -39,7 +40,7 @@ public interface SmartLearningService {
             boolean admin
     );
 
-    void updateResource(Long id, QbLearningResource resource);
+    void updateResource(Long id, LearningResourceUpsertRequest request);
 
     void deleteResource(Long id);
 

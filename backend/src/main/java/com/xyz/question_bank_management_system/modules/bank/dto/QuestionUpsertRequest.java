@@ -32,6 +32,6 @@ public class QuestionUpsertRequest {
     @Valid
     private List<QuestionOptionDTO> options;
 
-    private List<Long> tagIds;
+    private List<Long> knowledgePointIds;
 
 }

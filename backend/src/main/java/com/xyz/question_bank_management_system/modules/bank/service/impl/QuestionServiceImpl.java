@@ -11,13 +11,14 @@ import com.xyz.question_bank_management_system.modules.bank.dto.QuestionSearchQu
 import com.xyz.question_bank_management_system.modules.bank.dto.QuestionUpsertRequest;
 import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestion;
+import com.xyz.question_bank_management_system.modules.bank.entity.QuestionKnowledge;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestionOption;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionOptionMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionTagMapper;
+import com.xyz.question_bank_management_system.modules.bank.mapper.QuestionKnowledgeMapper;
 import com.xyz.question_bank_management_system.modules.user.mapper.SysRoleMapper;
 import com.xyz.question_bank_management_system.modules.user.service.AuditLogService;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
@@ -65,7 +66,7 @@ public class QuestionServiceImpl implements QuestionService {
 
     private final QbQuestionMapper questionMapper;
     private final QbQuestionOptionMapper optionMapper;
-    private final QbQuestionTagMapper questionTagMapper;
+    private final QuestionKnowledgeMapper questionKnowledgeMapper;
     private final QbLlmCallMapper llmCallMapper;
     private final SysRoleMapper roleMapper;
     private final LlmService llmService;
@@ -88,8 +89,8 @@ public class QuestionServiceImpl implements QuestionService {
 
         questionMapper.insert(q);
         Long qid = q.getId();
-        replaceOptionsAndTags(qid, request);
-        recordAudit(creatorId, "QUESTION_CREATE", "QUESTION", qid, null, questionAuditSnapshot(q, request.getTagIds()));
+        replaceOptionsAndKnowledge(qid, request);
+        recordAudit(creatorId, "QUESTION_CREATE", "QUESTION", qid, null, questionAuditSnapshot(q, request.getKnowledgePointIds()));
         return qid;
     }
 
@@ -97,7 +98,7 @@ public class QuestionServiceImpl implements QuestionService {
     @Transactional
     public void update(Long questionId, QuestionUpsertRequest request, Long actorId, boolean isAdmin) {
         QbQuestion exist = loadQuestionForManage(questionId, actorId, isAdmin);
-        Map<String, Object> before = questionAuditSnapshot(exist, questionTagMapper.selectTagIdsByQuestionId(questionId));
+        Map<String, Object> before = questionAuditSnapshot(exist, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId));
         QuestionTypeEnum type = validateQuestion(request);
         String chapter = normalizeAndValidateChapter(request.getChapter());
         String standardAnswer = resolveStandardAnswerForPersistence(request, type);
@@ -107,17 +108,17 @@ public class QuestionServiceImpl implements QuestionService {
         applyBankReviewStateOnSave(exist, request, isAdminUser(exist.getCreatedBy()), preserveBankReview);
 
         questionMapper.update(exist);
-        replaceOptionsAndTags(questionId, request);
-        recordAudit(actorId, "QUESTION_UPDATE", "QUESTION", questionId, before, questionAuditSnapshot(exist, request.getTagIds()));
+        replaceOptionsAndKnowledge(questionId, request);
+        recordAudit(actorId, "QUESTION_UPDATE", "QUESTION", questionId, before, questionAuditSnapshot(exist, request.getKnowledgePointIds()));
     }
 
     @Override
     public void delete(Long questionId, Long actorId, boolean isAdmin) {
         QbQuestion exist = loadQuestionForManage(questionId, actorId, isAdmin);
-        Map<String, Object> before = questionAuditSnapshot(exist, questionTagMapper.selectTagIdsByQuestionId(questionId));
+        Map<String, Object> before = questionAuditSnapshot(exist, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId));
         questionMapper.softDelete(questionId);
         optionMapper.deleteByQuestionId(questionId);
-        questionTagMapper.deleteByQuestionId(questionId);
+        questionKnowledgeMapper.deleteByQuestionId(questionId);
         recordAudit(actorId, "QUESTION_DELETE", "QUESTION", questionId, before, null);
     }
 
@@ -179,8 +180,9 @@ public class QuestionServiceImpl implements QuestionService {
         }
         vo.setOptions(optVos);
 
-        vo.setTagIds(questionTagMapper.selectTagIdsByQuestionId(q.getId()));
-        vo.setTagNames(questionTagMapper.selectTagNamesByQuestionId(q.getId()));
+        List<QuestionKnowledge> relations = questionKnowledgeMapper.selectByQuestionId(q.getId());
+        vo.setKnowledgePointIds(relations.stream().map(QuestionKnowledge::getKnowledgePointId).toList());
+        vo.setKnowledgeRelations(relations.stream().map(this::toKnowledgeVO).toList());
         vo.setLlmAnalyses(buildLatestLlmAnalyses(q.getId()));
         return vo;
     }
@@ -207,8 +209,7 @@ public class QuestionServiceImpl implements QuestionService {
             vo.setBankReviewComment(TextRepairUtil.repairGbkUtf8Mojibake(q.getBankReviewComment()));
             vo.setCreatedBy(q.getCreatedBy());
             vo.setUpdatedAt(q.getUpdatedAt());
-            vo.setTagIds(questionTagMapper.selectTagIdsByQuestionId(q.getId()));
-            vo.setTagNames(questionTagMapper.selectTagNamesByQuestionId(q.getId()));
+            vo.setKnowledgePointIds(questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(q.getId()));
             list.add(vo);
         }
         return PageResponse.of(safePage, safeSize, total, list);
@@ -217,7 +218,7 @@ public class QuestionServiceImpl implements QuestionService {
     @Override
     public void publish(Long questionId, Long actorId, boolean isAdmin) {
         QbQuestion q = loadQuestionForManage(questionId, actorId, isAdmin);
-        Map<String, Object> before = questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId));
+        Map<String, Object> before = questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId));
 
         QuestionTypeEnum type = QuestionTypeEnum.of(q.getQuestionType() == null ? -1 : q.getQuestionType());
         if (type == null || !type.isEnabledNow()) {
@@ -243,30 +244,30 @@ public class QuestionServiceImpl implements QuestionService {
             markApproved(q, q.getCreatedBy(), null, q.getCreatedBy());
             questionMapper.updateBankReview(q);
         }
-        recordAudit(actorId, "QUESTION_PUBLISH", "QUESTION", questionId, before, questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId)));
+        recordAudit(actorId, "QUESTION_PUBLISH", "QUESTION", questionId, before, questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId)));
     }
 
     @Override
     @Transactional
     public void submitForBankReview(Long questionId, Long actorId) {
         QbQuestion q = loadQuestionForManage(questionId, actorId, false);
-        Map<String, Object> before = questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId));
+        Map<String, Object> before = questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId));
         if (!Objects.equals(q.getStatus(), QuestionStatusEnum.PUBLISHED.getCode())) {
             throw BizException.of(ErrorCode.PARAM_ERROR, "请先发布题目，再提交审核");
         }
         markPending(q);
         questionMapper.updateBankReview(q);
-        recordAudit(actorId, "QUESTION_BANK_SUBMIT", "QUESTION", questionId, before, questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId)));
+        recordAudit(actorId, "QUESTION_BANK_SUBMIT", "QUESTION", questionId, before, questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId)));
     }
 
     @Override
     @Transactional
     public void cancelBankReview(Long questionId, Long actorId) {
         QbQuestion q = loadQuestionForManage(questionId, actorId, false);
-        Map<String, Object> before = questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId));
+        Map<String, Object> before = questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId));
         markPrivate(q);
         questionMapper.updateBankReview(q);
-        recordAudit(actorId, "QUESTION_BANK_CANCEL", "QUESTION", questionId, before, questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId)));
+        recordAudit(actorId, "QUESTION_BANK_CANCEL", "QUESTION", questionId, before, questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId)));
     }
 
     @Override
@@ -276,7 +277,7 @@ public class QuestionServiceImpl implements QuestionService {
         if (q == null) {
             throw BizException.of(ErrorCode.NOT_FOUND, "题目不存在");
         }
-        Map<String, Object> before = questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId));
+        Map<String, Object> before = questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId));
         if (isAdminUser(q.getCreatedBy())) {
             throw BizException.of(ErrorCode.PARAM_ERROR, "管理员创建的题目无需入库审核");
         }
@@ -293,7 +294,7 @@ public class QuestionServiceImpl implements QuestionService {
             throw BizException.of(ErrorCode.PARAM_ERROR, "审核状态只能是通过或驳回");
         }
         questionMapper.updateBankReview(q);
-        recordAudit(reviewerId, "QUESTION_BANK_REVIEW", "QUESTION", questionId, before, questionAuditSnapshot(q, questionTagMapper.selectTagIdsByQuestionId(questionId)));
+        recordAudit(reviewerId, "QUESTION_BANK_REVIEW", "QUESTION", questionId, before, questionAuditSnapshot(q, questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(questionId)));
     }
 
     @Override
@@ -404,7 +405,7 @@ public class QuestionServiceImpl implements QuestionService {
         question.setStatus(request.getStatus());
     }
 
-    private void replaceOptionsAndTags(Long questionId, QuestionUpsertRequest request) {
+    private void replaceOptionsAndKnowledge(Long questionId, QuestionUpsertRequest request) {
         optionMapper.deleteByQuestionId(questionId);
         if (request.getOptions() != null && !request.getOptions().isEmpty()) {
             List<QbQuestionOption> list = new ArrayList<>();
@@ -420,10 +421,21 @@ public class QuestionServiceImpl implements QuestionService {
             optionMapper.batchInsert(list);
         }
 
-        questionTagMapper.deleteByQuestionId(questionId);
-        if (request.getTagIds() != null && !request.getTagIds().isEmpty()) {
-            List<Long> uniqueTagIds = new ArrayList<>(new LinkedHashSet<>(request.getTagIds()));
-            questionTagMapper.batchInsert(questionId, uniqueTagIds);
+        questionKnowledgeMapper.deleteByQuestionId(questionId);
+        if (request.getKnowledgePointIds() != null && !request.getKnowledgePointIds().isEmpty()) {
+            List<Long> uniqueKnowledgePointIds = new ArrayList<>(new LinkedHashSet<>(request.getKnowledgePointIds()));
+            List<QuestionKnowledge> relations = new ArrayList<>();
+            for (int index = 0; index < uniqueKnowledgePointIds.size(); index++) {
+                QuestionKnowledge relation = new QuestionKnowledge();
+                relation.setKnowledgePointId(uniqueKnowledgePointIds.get(index));
+                relation.setWeight(java.math.BigDecimal.ONE);
+                relation.setRelationType("assess");
+                relation.setIsPrimary(index == 0 ? 1 : 0);
+                relation.setConfidence(java.math.BigDecimal.ONE);
+                relation.setSourceType("manual");
+                relations.add(relation);
+            }
+            questionKnowledgeMapper.batchInsert(questionId, relations);
         }
 
     }
@@ -579,7 +591,7 @@ public class QuestionServiceImpl implements QuestionService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private Map<String, Object> questionAuditSnapshot(QbQuestion question, List<Long> tagIds) {
+    private Map<String, Object> questionAuditSnapshot(QbQuestion question, List<Long> knowledgePointIds) {
         Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
         snapshot.put("id", question.getId());
         snapshot.put("title", question.getTitle());
@@ -590,8 +602,19 @@ public class QuestionServiceImpl implements QuestionService {
         snapshot.put("bankReviewStatus", question.getBankReviewStatus());
         snapshot.put("bankReviewComment", question.getBankReviewComment());
         snapshot.put("createdBy", question.getCreatedBy());
-        snapshot.put("tagIds", tagIds);
+        snapshot.put("knowledgePointIds", knowledgePointIds);
         return snapshot;
+    }
+
+    private QuestionDetailVO.QuestionKnowledgeVO toKnowledgeVO(QuestionKnowledge relation) {
+        QuestionDetailVO.QuestionKnowledgeVO vo = new QuestionDetailVO.QuestionKnowledgeVO();
+        vo.setKnowledgePointId(relation.getKnowledgePointId());
+        vo.setWeight(relation.getWeight());
+        vo.setRelationType(relation.getRelationType());
+        vo.setIsPrimary(relation.getIsPrimary());
+        vo.setConfidence(relation.getConfidence());
+        vo.setSourceType(relation.getSourceType());
+        return vo;
     }
 
     private void recordAudit(Long userId,

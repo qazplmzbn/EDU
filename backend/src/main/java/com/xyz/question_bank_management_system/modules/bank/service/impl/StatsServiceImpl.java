@@ -2,13 +2,13 @@ package com.xyz.question_bank_management_system.modules.bank.service.impl;
 
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestionUserStat;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbTagMastery;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbWrongQuestion;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionUserStatMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbTagMasteryMapper;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbWrongQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.service.StatsService;
@@ -25,11 +25,11 @@ public class StatsServiceImpl implements StatsService {
 
     private final QbWrongQuestionMapper wrongQuestionMapper;
     private final QbQuestionUserStatMapper questionUserStatMapper;
-    private final QbTagMasteryMapper tagMasteryMapper;
+    private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
     private final QbUserAbilityMapper userAbilityMapper;
 
     @Override
-    public PageResponse<QbWrongQuestion> wrongQuestions(Long userId, Long tagId, String chapter, Boolean isResolved, long page, long size) {
+    public PageResponse<QbWrongQuestion> wrongQuestions(Long userId, Long knowledgePointId, String chapter, Boolean isResolved, long page, long size) {
         long safePage = PageParamUtil.normalizePage(page);
         long safeSize = PageParamUtil.normalizeSize(size);
         long offset = PageParamUtil.offset(safePage, safeSize);
@@ -38,9 +38,9 @@ public class StatsServiceImpl implements StatsService {
         Integer resolvedFlag = isResolved == null ? null : (isResolved ? 1 : 0);
 
         List<QbWrongQuestion> rows = wrongQuestionMapper.pageByFilter(
-                userId, tagId, chapterFilter, resolvedFlag, offset, safeSize
+                userId, knowledgePointId, chapterFilter, resolvedFlag, offset, safeSize
         );
-        long total = wrongQuestionMapper.countByFilter(userId, tagId, chapterFilter, resolvedFlag);
+        long total = wrongQuestionMapper.countByFilter(userId, knowledgePointId, chapterFilter, resolvedFlag);
         return PageResponse.of(safePage, safeSize, total, rows);
     }
 
@@ -64,12 +64,8 @@ public class StatsServiceImpl implements StatsService {
     }
 
     @Override
-    public List<QbTagMastery> mastery(Long userId, Integer tagType) {
-        int safeTagType = tagType == null ? 1 : tagType;
-        if (safeTagType < 1 || safeTagType > 3) {
-            throw BizException.of(ErrorCode.PARAM_ERROR, "标签类型必须是 1、2 或 3");
-        }
-        return tagMasteryMapper.selectByUserIdAndTagType(userId, safeTagType);
+    public List<StudentKnowledgeState> mastery(Long userId) {
+        return studentKnowledgeStateMapper.selectByUserId(userId);
     }
 
     @Override

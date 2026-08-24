@@ -8,7 +8,7 @@ import java.util.List;
 @Data
 public class PersonalizedPracticePlanVO {
     private List<QbKnowledgePoint> weakPoints;
-    private List<Long> tagIds;
+    private List<Long> knowledgePointIds;
     private Integer totalScore;
     private String mode;
     private String reason;

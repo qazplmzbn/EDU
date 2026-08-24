@@ -77,7 +77,6 @@ public class TeacherAgentResourceGenerateVO {
         private List<QuizQuestion> quizQuestions = new ArrayList<>();
         private List<ExerciseQuestion> exerciseQuestions = new ArrayList<>();
         private Long knowledgePointId;
-        private Long tagId;
         private Map<String, Object> agentOutputs;
         private Map<String, Object> personalizationBasis;
         private ReviewReport reviewReport;
@@ -134,7 +133,6 @@ public class TeacherAgentResourceGenerateVO {
         private String difficulty;
         private String knowledgePoint;
         private Long knowledgePointId;
-        private Long tagId;
     }
 
     @Data

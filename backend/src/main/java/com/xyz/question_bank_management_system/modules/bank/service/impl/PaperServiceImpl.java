@@ -11,13 +11,14 @@ import com.xyz.question_bank_management_system.modules.bank.entity.QbPaper;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbPaperQuestion;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestion;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestionOption;
+import com.xyz.question_bank_management_system.modules.bank.entity.QuestionKnowledge;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbPaperMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbPaperQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionOptionMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionTagMapper;
+import com.xyz.question_bank_management_system.modules.bank.mapper.QuestionKnowledgeMapper;
 import com.xyz.question_bank_management_system.modules.user.service.AuditLogService;
 import com.xyz.question_bank_management_system.modules.bank.service.PaperService;
 import com.xyz.question_bank_management_system.util.HashUtil;
@@ -45,7 +46,7 @@ public class PaperServiceImpl implements PaperService {
     private final QbPaperQuestionMapper paperQuestionMapper;
     private final QbQuestionMapper questionMapper;
     private final QbQuestionOptionMapper optionMapper;
-    private final QbQuestionTagMapper questionTagMapper;
+    private final QuestionKnowledgeMapper questionKnowledgeMapper;
     private final AuditLogService auditLogService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -322,7 +323,16 @@ public class PaperServiceImpl implements PaperService {
         try {
             QbQuestion q = questionMapper.selectById(questionId);
             List<QbQuestionOption> opts = optionMapper.selectByQuestionId(questionId);
-            List<Long> tagIds = questionTagMapper.selectTagIdsByQuestionId(questionId);
+            List<Map<String, Object>> knowledgeRelations = questionKnowledgeMapper.selectByQuestionId(questionId).stream().map(relation -> {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("knowledgePointId", relation.getKnowledgePointId());
+                item.put("weight", relation.getWeight());
+                item.put("relationType", relation.getRelationType());
+                item.put("isPrimary", relation.getIsPrimary());
+                item.put("confidence", relation.getConfidence());
+                item.put("sourceType", relation.getSourceType());
+                return item;
+            }).toList();
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", q.getId());
@@ -335,7 +345,7 @@ public class PaperServiceImpl implements PaperService {
             m.put("answerFormat", q.getAnswerFormat());
             m.put("analysisText", q.getAnalysisText());
             m.put("analysisSource", q.getAnalysisSource());
-            m.put("tagIds", tagIds);
+            m.put("knowledgeRelations", knowledgeRelations);
             m.put("options", opts);
             return objectMapper.writeValueAsString(m);
         } catch (Exception e) {

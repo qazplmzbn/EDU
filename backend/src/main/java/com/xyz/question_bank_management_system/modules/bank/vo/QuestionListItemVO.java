@@ -17,6 +17,5 @@ public class QuestionListItemVO {
     private String bankReviewComment;
     private Long createdBy;
     private LocalDateTime updatedAt;
-    private List<Long> tagIds;
-    private List<String> tagNames;
+    private List<Long> knowledgePointIds;
 }

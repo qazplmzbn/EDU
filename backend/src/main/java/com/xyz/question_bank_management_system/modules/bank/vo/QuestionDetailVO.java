@@ -29,8 +29,8 @@ public class QuestionDetailVO {
     private LocalDateTime updatedAt;
 
     private List<QuestionOptionVO> options;
-    private List<Long> tagIds;
-    private List<String> tagNames;
+    private List<Long> knowledgePointIds;
+    private List<QuestionKnowledgeVO> knowledgeRelations;
     private List<QuestionLlmAnalysisVO> llmAnalyses;
 
     @Data
@@ -40,6 +40,16 @@ public class QuestionDetailVO {
         private String optionContent;
         private Integer isCorrect;
         private Integer sortOrder;
+    }
+
+    @Data
+    public static class QuestionKnowledgeVO {
+        private Long knowledgePointId;
+        private java.math.BigDecimal weight;
+        private String relationType;
+        private Integer isPrimary;
+        private java.math.BigDecimal confidence;
+        private String sourceType;
     }
 
 }

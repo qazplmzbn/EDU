@@ -1,7 +1,7 @@
 package com.xyz.question_bank_management_system.modules.profile.service.impl;
 
 import com.xyz.question_bank_management_system.modules.bank.entity.QbAttempt;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbTagMastery;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.user.entity.SysUser;
 import com.xyz.question_bank_management_system.exception.BizException;
@@ -9,7 +9,8 @@ import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbTagMasteryMapper;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
+import com.xyz.question_bank_management_system.modules.knowledge.mapper.KnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
 import com.xyz.question_bank_management_system.modules.profile.service.StageLearningEvaluationService;
 import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
@@ -32,20 +33,23 @@ public class StageLearningEvaluationServiceImpl implements StageLearningEvaluati
 
     private final QbAttemptMapper attemptMapper;
     private final QbAssignmentTargetMapper assignmentTargetMapper;
-    private final QbTagMasteryMapper tagMasteryMapper;
+    private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
+    private final KnowledgePointMapper knowledgePointMapper;
     private final QbUserAbilityMapper userAbilityMapper;
     private final QbClassMemberMapper classMemberMapper;
     private final SysUserMapper sysUserMapper;
 
     public StageLearningEvaluationServiceImpl(QbAttemptMapper attemptMapper,
                                           QbAssignmentTargetMapper assignmentTargetMapper,
-                                          QbTagMasteryMapper tagMasteryMapper,
+                                          StudentKnowledgeStateMapper studentKnowledgeStateMapper,
+                                          KnowledgePointMapper knowledgePointMapper,
                                           QbUserAbilityMapper userAbilityMapper,
                                           QbClassMemberMapper classMemberMapper,
                                           SysUserMapper sysUserMapper) {
         this.attemptMapper = attemptMapper;
         this.assignmentTargetMapper = assignmentTargetMapper;
-        this.tagMasteryMapper = tagMasteryMapper;
+        this.studentKnowledgeStateMapper = studentKnowledgeStateMapper;
+        this.knowledgePointMapper = knowledgePointMapper;
         this.userAbilityMapper = userAbilityMapper;
         this.classMemberMapper = classMemberMapper;
         this.sysUserMapper = sysUserMapper;
@@ -103,7 +107,7 @@ public class StageLearningEvaluationServiceImpl implements StageLearningEvaluati
                 window.start().atStartOfDay(),
                 window.end().plusDays(1).atStartOfDay()
         );
-        List<QbTagMastery> masteryRows = tagMasteryMapper.selectByUserIdAndTagType(studentId, null);
+        List<StudentKnowledgeState> masteryRows = studentKnowledgeStateMapper.selectByUserId(studentId);
         QbUserAbility ability = userAbilityMapper.selectByUserId(studentId);
 
         int completed = attempts == null ? 0 : attempts.size();
@@ -118,9 +122,9 @@ public class StageLearningEvaluationServiceImpl implements StageLearningEvaluati
         double masteryAverage = masteryRows == null || masteryRows.isEmpty()
                 ? 0.0
                 : masteryRows.stream()
-                .map(QbTagMastery::getMasteryValue)
+                .map(StudentKnowledgeState::getMasteryValue)
                 .filter(Objects::nonNull)
-                .mapToDouble(Double::doubleValue)
+                .mapToDouble(value -> value.doubleValue())
                 .average()
                 .orElse(0.0);
         int abilityScore = ability == null || ability.getAbilityScore() == null ? 0 : ability.getAbilityScore();
@@ -153,19 +157,20 @@ public class StageLearningEvaluationServiceImpl implements StageLearningEvaluati
         return vo;
     }
 
-    private List<StageLearningEvaluationVO.WeakKnowledgePoint> buildWeakPoints(List<QbTagMastery> masteryRows) {
+    private List<StageLearningEvaluationVO.WeakKnowledgePoint> buildWeakPoints(List<StudentKnowledgeState> masteryRows) {
         if (masteryRows == null) {
             return List.of();
         }
         return masteryRows.stream()
-                .filter(row -> row.getTagId() != null)
-                .sorted(Comparator.comparing(row -> row.getMasteryValue() == null ? 0.0 : row.getMasteryValue()))
+                .filter(row -> row.getKnowledgePointId() != null)
+                .sorted(Comparator.comparingDouble(row -> row.getMasteryValue() == null ? 0.0 : row.getMasteryValue().doubleValue()))
                 .limit(6)
                 .map(row -> {
                     StageLearningEvaluationVO.WeakKnowledgePoint point = new StageLearningEvaluationVO.WeakKnowledgePoint();
-                    point.setTagId(row.getTagId());
-                    point.setTagName(row.getTagName());
-                    point.setMasteryValue(row.getMasteryValue() == null ? 0.0 : row.getMasteryValue());
+                    point.setKnowledgePointId(row.getKnowledgePointId());
+                    var knowledgePoint = knowledgePointMapper.selectById(row.getKnowledgePointId());
+                    point.setKnowledgePointName(knowledgePoint == null ? String.valueOf(row.getKnowledgePointId()) : knowledgePoint.getName());
+                    point.setMasteryValue(row.getMasteryValue() == null ? 0.0 : row.getMasteryValue().doubleValue());
                     point.setAttemptCount(row.getAttemptCount());
                     return point;
                 })
@@ -240,4 +245,3 @@ public class StageLearningEvaluationServiceImpl implements StageLearningEvaluati
     private record StageWindow(String key, String name, LocalDate start, LocalDate end) {
     }
 }
-

@@ -13,6 +13,6 @@ public class QbAttemptQuestion {
     private String snapshotHash;
     private Integer questionType;
     private Integer difficulty;
-    /** JSON array string */
-    private String tagIdsJson;
+    /** JSON array of knowledge point relation snapshots */
+    private String knowledgeSnapshotJson;
 }

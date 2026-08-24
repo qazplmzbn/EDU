@@ -88,8 +88,8 @@ public class QuestionController {
             @RequestParam(required = false) Integer questionType,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) Integer bankReviewStatus,
-            @RequestParam(required = false) Long tagId,
-            @RequestParam(required = false) String tagIds,
+            @RequestParam(required = false) Long knowledgePointId,
+            @RequestParam(required = false) String knowledgePointIds,
             @RequestParam(required = false, defaultValue = "all") String source,
             @RequestParam(required = false, defaultValue = "false") Boolean studentView,
             @RequestParam(defaultValue = "1") long page,
@@ -102,17 +102,17 @@ public class QuestionController {
         q.setQuestionType(normalizeEnabledQuestionType(questionType));
         q.setStatus(status);
         q.setBankReviewStatus(bankReviewStatus);
-        q.setTagId(tagId);
-        if (tagIds != null && !tagIds.isBlank()) {
+        q.setKnowledgePointId(knowledgePointId);
+        if (knowledgePointIds != null && !knowledgePointIds.isBlank()) {
             try {
-                List<Long> ids = Arrays.stream(tagIds.split(","))
+                List<Long> ids = Arrays.stream(knowledgePointIds.split(","))
                         .filter(s -> !s.isBlank())
                         .map(String::trim)
                         .map(Long::parseLong)
                         .collect(Collectors.toList());
-                q.setTagIds(ids);
+                q.setKnowledgePointIds(ids);
             } catch (NumberFormatException e) {
-                throw BizException.of(ErrorCode.PARAM_ERROR, "标签编号必须使用逗号分隔的数字");
+                throw BizException.of(ErrorCode.PARAM_ERROR, "知识点编号必须使用逗号分隔的数字");
             }
         }
         Long uid = SecurityContextUtil.getUserId();

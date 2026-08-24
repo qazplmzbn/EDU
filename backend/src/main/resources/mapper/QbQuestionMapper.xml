@@ -48,19 +48,19 @@
                     </otherwise>
                 </choose>
             </if>
-            <if test="q.tagId != null">
+            <if test="q.knowledgePointId != null">
                 AND EXISTS (
-                    SELECT 1 FROM qb_question_tag qt
-                    WHERE qt.question_id = q.id AND qt.tag_id = #{q.tagId}
+                    SELECT 1 FROM question_knowledge qk
+                    WHERE qk.question_id = q.id AND qk.knowledge_point_id = #{q.knowledgePointId}
                 )
             </if>
-            <if test="q.tagIds != null and q.tagIds.size > 0">
+            <if test="q.knowledgePointIds != null and q.knowledgePointIds.size > 0">
                 AND EXISTS (
-                    SELECT 1 FROM qb_question_tag qt
-                    WHERE qt.question_id = q.id
-                      AND qt.tag_id IN
-                      <foreach collection="q.tagIds" item="tid" open="(" close=")" separator=",">
-                          #{tid}
+                    SELECT 1 FROM question_knowledge qk
+                    WHERE qk.question_id = q.id
+                      AND qk.knowledge_point_id IN
+                      <foreach collection="q.knowledgePointIds" item="kid" open="(" close=")" separator=",">
+                          #{kid}
                       </foreach>
                 )
             </if>
@@ -99,14 +99,14 @@
                   #{ch}
               </foreach>
           </if>
-          <if test="tagIds != null and tagIds.size > 0">
+          <if test="knowledgePointIds != null and knowledgePointIds.size > 0">
               AND EXISTS (
                   SELECT 1
-                  FROM qb_question_tag qt
-                  WHERE qt.question_id = q.id
-                    AND qt.tag_id IN
-                    <foreach collection="tagIds" item="tid" open="(" close=")" separator=",">
-                      #{tid}
+                  FROM question_knowledge qk
+                  WHERE qk.question_id = q.id
+                    AND qk.knowledge_point_id IN
+                    <foreach collection="knowledgePointIds" item="kid" open="(" close=")" separator=",">
+                      #{kid}
                     </foreach>
               )
           </if>

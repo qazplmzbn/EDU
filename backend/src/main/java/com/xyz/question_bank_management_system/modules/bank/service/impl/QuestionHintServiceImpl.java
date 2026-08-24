@@ -7,8 +7,8 @@ import com.xyz.question_bank_management_system.modules.bank.entity.*;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.*;
-import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgePoint;
-import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgePointMapper;
+import com.xyz.question_bank_management_system.modules.knowledge.entity.KnowledgePoint;
+import com.xyz.question_bank_management_system.modules.knowledge.mapper.KnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceMapper;
 import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
@@ -36,8 +36,8 @@ public class QuestionHintServiceImpl implements QuestionHintService {
     private final QbAttemptMapper attemptMapper;
     private final QbAttemptQuestionMapper attemptQuestionMapper;
     private final QbQuestionMapper questionMapper;
-    private final QbQuestionTagMapper questionTagMapper;
-    private final QbKnowledgePointMapper knowledgePointMapper;
+    private final QuestionKnowledgeMapper questionKnowledgeMapper;
+    private final KnowledgePointMapper knowledgePointMapper;
     private final QbLearningResourceMapper learningResourceMapper;
     private final LlmService llmService;
 
@@ -62,23 +62,18 @@ public class QuestionHintServiceImpl implements QuestionHintService {
         }
 
         QbQuestion question = questionMapper.selectById(attemptQuestion.getQuestionId());
-        List<Long> tagIds = questionTagMapper.selectTagIdsByQuestionId(attemptQuestion.getQuestionId());
-        List<String> tagNames = questionTagMapper.selectTagNamesByQuestionId(attemptQuestion.getQuestionId());
-        List<QbKnowledgePoint> knowledgePoints = tagIds == null || tagIds.isEmpty()
-                ? List.of()
-                : knowledgePointMapper.selectByTagIds(tagIds);
-        List<Long> knowledgePointIds = knowledgePoints.stream().map(QbKnowledgePoint::getId).toList();
+        List<Long> knowledgePointIds = questionKnowledgeMapper.selectKnowledgePointIdsByQuestionId(attemptQuestion.getQuestionId());
+        List<KnowledgePoint> knowledgePoints = knowledgePointIds == null ? List.of() : knowledgePointIds.stream()
+                .map(knowledgePointMapper::selectById).filter(Objects::nonNull).toList();
         List<QbLearningResource> resources;
         if (!knowledgePointIds.isEmpty()) {
             resources = learningResourceMapper.selectByKnowledgePointIds(knowledgePointIds, 5);
-        } else if (tagIds != null && !tagIds.isEmpty()) {
-            resources = learningResourceMapper.selectByTagIds(tagIds, 5);
         } else {
             resources = List.of();
         }
 
-        List<String> contextSources = buildContextSources(tagNames, knowledgePoints, resources, question);
-        String prompt = buildPrompt(attemptQuestion, question, tagNames, knowledgePoints, resources, request);
+        List<String> contextSources = buildContextSources(knowledgePoints, resources, question);
+        String prompt = buildPrompt(attemptQuestion, question, knowledgePoints, resources, request);
         QbLlmCall call = llmService.chatCompletion(BIZ_TYPE_STUDENT_HINT, attemptQuestionId, prompt,
                 request == null ? null : request.getProviderKey(), userId);
         String content = llmService.extractContent(call.getResponseText());
@@ -95,8 +90,7 @@ public class QuestionHintServiceImpl implements QuestionHintService {
 
     private String buildPrompt(QbAttemptQuestion attemptQuestion,
                                QbQuestion question,
-                               List<String> tagNames,
-                               List<QbKnowledgePoint> knowledgePoints,
+                               List<KnowledgePoint> knowledgePoints,
                                List<QbLearningResource> resources,
                                QuestionHintRequest request) {
         JsonNode snapshot = readSnapshot(attemptQuestion.getSnapshotJson());
@@ -110,13 +104,12 @@ public class QuestionHintServiceImpl implements QuestionHintService {
         appendLine(context, "题干", stem);
         appendLine(context, "题型", String.valueOf(attemptQuestion.getQuestionType()));
         appendLine(context, "难度", String.valueOf(attemptQuestion.getDifficulty()));
-        appendLine(context, "标签", join(tagNames));
         appendLine(context, "学生当前答案", currentAnswer);
         appendLine(context, "学生提问", studentQuestion);
 
         if (!knowledgePoints.isEmpty()) {
             context.append("\n相关知识点:\n");
-            for (QbKnowledgePoint point : knowledgePoints) {
+            for (KnowledgePoint point : knowledgePoints) {
                 context.append("- ").append(nullToEmpty(point.getName()));
                 if (StringUtils.hasText(point.getDescription())) {
                     context.append(": ").append(point.getDescription());
@@ -161,17 +154,13 @@ public class QuestionHintServiceImpl implements QuestionHintService {
                 """.formatted(contextText);
     }
 
-    private List<String> buildContextSources(List<String> tagNames,
-                                             List<QbKnowledgePoint> knowledgePoints,
+    private List<String> buildContextSources(List<KnowledgePoint> knowledgePoints,
                                              List<QbLearningResource> resources,
                                              QbQuestion question) {
         Set<String> sources = new LinkedHashSet<>();
-        if (tagNames != null && !tagNames.isEmpty()) {
-            sources.add("标签: " + join(tagNames));
-        }
         if (knowledgePoints != null) {
             knowledgePoints.stream()
-                    .map(QbKnowledgePoint::getName)
+                    .map(KnowledgePoint::getName)
                     .filter(StringUtils::hasText)
                     .forEach(name -> sources.add("知识点: " + name));
         }

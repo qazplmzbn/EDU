@@ -1,12 +1,10 @@
-package com.xyz.question_bank_management_system.modules.learning.entity;
+package com.xyz.question_bank_management_system.modules.learning.dto;
 
 import lombok.Data;
-
-import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
-public class QbLearningResource {
-    private Long id;
+public class LearningResourceUpsertRequest {
     private String title;
     private String resourceType;
     private String resourcePurpose;
@@ -21,8 +19,5 @@ public class QbLearningResource {
     private String modelSourceJson;
     private String auditStatus;
     private Long agentTaskId;
-    private Long createdBy;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private Integer isDeleted;
+    private List<Long> knowledgePointIds;
 }

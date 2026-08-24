@@ -12,7 +12,7 @@ import com.xyz.question_bank_management_system.modules.bank.mapper.QbPaperMapper
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbPaperQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionOptionMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionTagMapper;
+import com.xyz.question_bank_management_system.modules.bank.mapper.QuestionKnowledgeMapper;
 import com.xyz.question_bank_management_system.modules.user.mapper.SysRoleMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +44,7 @@ class PaperServiceImplTest {
     @Mock
     private QbQuestionOptionMapper optionMapper;
     @Mock
-    private QbQuestionTagMapper questionTagMapper;
+    private QuestionKnowledgeMapper questionKnowledgeMapper;
     @Mock
     private SysRoleMapper roleMapper;
 
@@ -72,7 +72,7 @@ class PaperServiceImplTest {
         when(paperMapper.selectById(9001L)).thenReturn(paper);
         when(questionMapper.selectById(501L)).thenReturn(question);
         when(optionMapper.selectByQuestionId(501L)).thenReturn(List.of());
-        when(questionTagMapper.selectTagIdsByQuestionId(501L)).thenReturn(List.of());
+        when(questionKnowledgeMapper.selectByQuestionId(501L)).thenReturn(List.of());
         when(paperQuestionMapper.insert(any())).thenThrow(new DuplicateKeyException("duplicate"));
 
         BizException ex = assertThrows(BizException.class, () -> paperService.addQuestion(9001L, request, 1001L, false));
