@@ -79,3 +79,7 @@ tmp/
 /阶段计划/
 /backups/
 /docs/api/后端接口实施清单.md
+
+# Local handoff notes and browser automation artifacts
+/交接文档.md
+/.playwright-cli/

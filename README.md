@@ -62,13 +62,13 @@ Agent System/
 CREATE DATABASE question_bank DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-新建数据库推荐先执行 `backend/` 下的初始化脚本；其中已包含阶段三的统一作业目标表结构：
+新建数据库推荐先执行 `backend/` 下的初始化脚本；其中已包含阶段一至三的最终职业、技能、知识点、资源关系与统一作业投放结构：
 
 ```text
 backend/database_full_init.sql
 ```
 
-已存在的旧数据库不要重复执行初始化脚本，应按阶段迁移脚本完成结构转换；阶段三使用 `backend/migrations/stage03/` 的 precheck、schema、migrate、verify 顺序，并由用户手工执行。
+已存在的旧数据库不要重复执行初始化脚本，应按阶段迁移脚本完成结构转换。阶段四的预检、校验与受门禁保护的清理脚本位于 `backend/migrations/stage04/`，所有 SQL 均由用户手工执行；未获得发布确认时不得执行 cleanup。
 
 如需启用智能学习、知识图谱、模型中心、能力层同步等扩展能力，再执行对应增量脚本：
 

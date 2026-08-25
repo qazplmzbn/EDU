@@ -70,21 +70,155 @@ CREATE TABLE IF NOT EXISTS sys_audit_log (
   KEY idx_sys_audit_entity (entity_type, entity_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_tag (
+CREATE TABLE IF NOT EXISTS occupation (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  tag_name VARCHAR(100) NOT NULL,
-  tag_code VARCHAR(100) NULL,
-  parent_id BIGINT UNSIGNED NULL,
-  tag_level INT NOT NULL DEFAULT 1,
-  tag_type TINYINT NOT NULL DEFAULT 1 COMMENT '1=knowledge,2=chapter,3=custom',
-  sort_order INT NOT NULL DEFAULT 0,
+  name_zh VARCHAR(255) NOT NULL,
+  name_en VARCHAR(255) NULL,
+  category_code VARCHAR(64) NULL,
+  description TEXT NULL,
+  source_name VARCHAR(64) NULL,
+  source_ref VARCHAR(500) NULL,
+  version VARCHAR(64) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   is_deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_qb_tag_code (tag_code),
-  KEY idx_qb_tag_parent (parent_id),
-  KEY idx_qb_tag_type (tag_type, is_deleted)
+  UNIQUE KEY uk_occupation_source (source_name, source_ref),
+  KEY idx_occupation_list (is_deleted, updated_at, id),
+  KEY idx_occupation_name (name_zh, is_deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS skill (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name_zh VARCHAR(255) NOT NULL,
+  skill_type VARCHAR(32) NOT NULL DEFAULT 'technical',
+  description TEXT NULL,
+  source_name VARCHAR(64) NULL,
+  source_ref VARCHAR(500) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  is_deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_skill_source (source_name, source_ref),
+  KEY idx_skill_list (is_deleted, updated_at, id),
+  KEY idx_skill_name (name_zh, is_deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS knowledge_point (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(150) NOT NULL,
+  code VARCHAR(100) NULL,
+  parent_id BIGINT UNSIGNED NULL,
+  level INT NOT NULL DEFAULT 1,
+  knowledge_type VARCHAR(32) NOT NULL DEFAULT 'concept',
+  difficulty TINYINT NOT NULL DEFAULT 3,
+  description VARCHAR(2000) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  is_deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_knowledge_point_code (code),
+  KEY idx_knowledge_point_parent (parent_id, is_deleted, id),
+  KEY idx_knowledge_point_list (is_deleted, updated_at, id),
+  CONSTRAINT ck_knowledge_point_level CHECK (level >= 1),
+  CONSTRAINT ck_knowledge_point_difficulty CHECK (difficulty BETWEEN 1 AND 5),
+  CONSTRAINT fk_knowledge_point_parent FOREIGN KEY (parent_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS occupation_alias (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  occupation_id BIGINT UNSIGNED NOT NULL,
+  alias_name VARCHAR(255) NOT NULL,
+  alias_type VARCHAR(24) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_occupation_alias (occupation_id, alias_name, alias_type),
+  KEY idx_occupation_alias_occupation (occupation_id),
+  CONSTRAINT fk_occupation_alias_occupation FOREIGN KEY (occupation_id) REFERENCES occupation(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS occupation_skill (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  occupation_id BIGINT UNSIGNED NOT NULL,
+  skill_id BIGINT UNSIGNED NOT NULL,
+  requirement_type VARCHAR(24) NOT NULL DEFAULT 'essential',
+  importance_score DECIMAL(6,4) NULL,
+  required_level DECIMAL(6,4) NULL,
+  source_ref VARCHAR(500) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_occupation_skill (occupation_id, skill_id, requirement_type),
+  KEY idx_occupation_skill_skill (skill_id, occupation_id),
+  CONSTRAINT ck_occupation_skill_importance CHECK (importance_score IS NULL OR importance_score BETWEEN 0 AND 1),
+  CONSTRAINT ck_occupation_skill_level CHECK (required_level IS NULL OR required_level BETWEEN 0 AND 1),
+  CONSTRAINT fk_occupation_skill_occupation FOREIGN KEY (occupation_id) REFERENCES occupation(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_occupation_skill_skill FOREIGN KEY (skill_id) REFERENCES skill(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS skill_knowledge (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  skill_id BIGINT UNSIGNED NOT NULL,
+  knowledge_point_id BIGINT UNSIGNED NOT NULL,
+  requirement_type VARCHAR(24) NOT NULL DEFAULT 'core',
+  weight DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  confidence DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  source_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+  source_ref VARCHAR(500) NULL,
+  evidence_text VARCHAR(2000) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_skill_knowledge (skill_id, knowledge_point_id, requirement_type),
+  KEY idx_skill_knowledge_knowledge (knowledge_point_id, skill_id),
+  CONSTRAINT ck_skill_knowledge_weight CHECK (weight BETWEEN 0 AND 1),
+  CONSTRAINT ck_skill_knowledge_confidence CHECK (confidence BETWEEN 0 AND 1),
+  CONSTRAINT fk_skill_knowledge_skill FOREIGN KEY (skill_id) REFERENCES skill(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_skill_knowledge_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS knowledge_relation (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  source_id BIGINT UNSIGNED NOT NULL,
+  target_id BIGINT UNSIGNED NOT NULL,
+  relation_type VARCHAR(40) NOT NULL DEFAULT 'prerequisite',
+  weight DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  confidence DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  source_type VARCHAR(40) NOT NULL DEFAULT 'manual',
+  description VARCHAR(1000) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  is_deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_knowledge_relation (source_id, target_id, relation_type),
+  KEY idx_knowledge_relation_source (source_id, relation_type, is_deleted),
+  KEY idx_knowledge_relation_target (target_id, relation_type, is_deleted),
+  CONSTRAINT ck_knowledge_relation_distinct CHECK (source_id <> target_id),
+  CONSTRAINT ck_knowledge_relation_weight CHECK (weight BETWEEN 0 AND 1),
+  CONSTRAINT ck_knowledge_relation_confidence CHECK (confidence BETWEEN 0 AND 1),
+  CONSTRAINT fk_knowledge_relation_source FOREIGN KEY (source_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_knowledge_relation_target FOREIGN KEY (target_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS data_sync_record (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  sync_type VARCHAR(40) NOT NULL,
+  source_name VARCHAR(64) NOT NULL,
+  trigger_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+  trigger_by BIGINT UNSIGNED NULL,
+  sync_version VARCHAR(64) NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'running',
+  fetched_count INT NOT NULL DEFAULT 0,
+  inserted_count INT NOT NULL DEFAULT 0,
+  updated_count INT NOT NULL DEFAULT 0,
+  failed_count INT NOT NULL DEFAULT 0,
+  error_message VARCHAR(2000) NULL,
+  started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  finished_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_data_sync_record_list (started_at, status, id),
+  KEY idx_data_sync_record_source (source_name, sync_type, started_at),
+  CONSTRAINT ck_data_sync_record_counts CHECK (fetched_count >= 0 AND inserted_count >= 0 AND updated_count >= 0 AND failed_count >= 0),
+  CONSTRAINT fk_data_sync_record_trigger_by FOREIGN KEY (trigger_by) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_llm_call (
@@ -222,13 +356,23 @@ CREATE TABLE IF NOT EXISTS qb_question_option (
   KEY idx_qb_option_question (question_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_question_tag (
+CREATE TABLE IF NOT EXISTS question_knowledge (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   question_id BIGINT UNSIGNED NOT NULL,
-  tag_id BIGINT UNSIGNED NOT NULL,
+  knowledge_point_id BIGINT UNSIGNED NOT NULL,
+  weight DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  relation_type VARCHAR(24) NOT NULL DEFAULT 'assess',
+  is_primary TINYINT NOT NULL DEFAULT 0,
+  confidence DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  source_type VARCHAR(24) NOT NULL DEFAULT 'manual',
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (question_id, tag_id),
-  KEY idx_qbqt_question_tag (question_id, tag_id),
-  KEY idx_qbqt_tag (tag_id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_question_knowledge (question_id, knowledge_point_id, relation_type),
+  KEY idx_question_knowledge_point (knowledge_point_id, question_id),
+  CONSTRAINT ck_question_knowledge_weight CHECK (weight BETWEEN 0 AND 1),
+  CONSTRAINT ck_question_knowledge_confidence CHECK (confidence BETWEEN 0 AND 1),
+  CONSTRAINT fk_question_knowledge_question FOREIGN KEY (question_id) REFERENCES qb_question(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_question_knowledge_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_paper (
@@ -354,7 +498,7 @@ CREATE TABLE IF NOT EXISTS qb_attempt_question (
   snapshot_hash VARCHAR(128) NULL,
   question_type TINYINT NULL,
   difficulty TINYINT NULL,
-  tag_ids_json TEXT NULL,
+  knowledge_snapshot_json LONGTEXT NULL,
   PRIMARY KEY (id),
   KEY idx_qb_attempt_question_attempt (attempt_id, order_no),
   KEY idx_qb_attempt_question_question (question_id)
@@ -439,15 +583,25 @@ CREATE TABLE IF NOT EXISTS qb_wrong_question (
   KEY idx_qbw_question (question_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_tag_mastery (
+CREATE TABLE IF NOT EXISTS student_knowledge_state (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
-  tag_id BIGINT UNSIGNED NOT NULL,
-  mastery_value DOUBLE NOT NULL DEFAULT 0,
+  knowledge_point_id BIGINT UNSIGNED NOT NULL,
+  mastery_value DECIMAL(6,4) NOT NULL DEFAULT 0.0000,
+  mastery_level VARCHAR(24) NULL,
+  confidence DECIMAL(6,4) NOT NULL DEFAULT 0.0000,
+  evidence_count INT NOT NULL DEFAULT 0,
   correct_count INT NOT NULL DEFAULT 0,
   attempt_count INT NOT NULL DEFAULT 0,
+  last_evidence_at DATETIME(3) NULL,
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (user_id, tag_id),
-  KEY idx_qb_tag_mastery_tag (tag_id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_student_knowledge_state (user_id, knowledge_point_id),
+  KEY idx_student_knowledge_state_point (knowledge_point_id, user_id),
+  CONSTRAINT ck_student_knowledge_mastery CHECK (mastery_value BETWEEN 0 AND 1),
+  CONSTRAINT ck_student_knowledge_confidence CHECK (confidence BETWEEN 0 AND 1),
+  CONSTRAINT fk_student_knowledge_user FOREIGN KEY (user_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_student_knowledge_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_user_ability (
@@ -457,62 +611,27 @@ CREATE TABLE IF NOT EXISTS qb_user_ability (
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_knowledge_point (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  name VARCHAR(100) NOT NULL,
-  code VARCHAR(100) NULL,
-  parent_id BIGINT UNSIGNED NULL,
-  tag_id BIGINT UNSIGNED NULL,
-  level INT NOT NULL DEFAULT 1,
-  description VARCHAR(1000) NULL,
-  sort_order INT NOT NULL DEFAULT 0,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  is_deleted TINYINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_kp_code (code),
-  KEY idx_kp_parent (parent_id),
-  KEY idx_kp_tag (tag_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS qb_knowledge_relation (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  source_id BIGINT UNSIGNED NOT NULL,
-  target_id BIGINT UNSIGNED NOT NULL,
-  relation_type VARCHAR(40) NOT NULL DEFAULT 'prerequisite',
-  weight DOUBLE NOT NULL DEFAULT 1.0,
-  confidence DOUBLE NOT NULL DEFAULT 1.0,
-  source_type VARCHAR(40) NOT NULL DEFAULT 'manual',
-  description VARCHAR(1000) NULL,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  is_deleted TINYINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_knowledge_relation (source_id, target_id, relation_type),
-  KEY idx_knowledge_relation_source (source_id, relation_type, is_deleted),
-  KEY idx_knowledge_relation_target (target_id, relation_type, is_deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS qb_learning_resource (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   title VARCHAR(200) NOT NULL,
   resource_type VARCHAR(40) NOT NULL DEFAULT 'article',
+  resource_purpose VARCHAR(32) NOT NULL DEFAULT 'learn',
   url VARCHAR(1000) NULL,
   summary VARCHAR(2000) NULL,
   content LONGTEXT NULL,
+  difficulty TINYINT NULL,
+  generation_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+  version VARCHAR(64) NULL,
   personalization_basis JSON NULL,
   review_report_json JSON NULL,
   model_source_json JSON NULL,
   audit_status VARCHAR(40) NOT NULL DEFAULT 'manual',
-  knowledge_point_id BIGINT UNSIGNED NULL,
-  tag_id BIGINT UNSIGNED NULL,
+  agent_task_id BIGINT UNSIGNED NULL,
   created_by BIGINT UNSIGNED NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   is_deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
-  KEY idx_resource_kp (knowledge_point_id),
-  KEY idx_resource_tag (tag_id),
   KEY idx_resource_audit_status (audit_status),
   KEY idx_resource_created_by (created_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -521,16 +640,32 @@ CREATE TABLE IF NOT EXISTS qb_learning_behavior (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
   behavior_type VARCHAR(40) NOT NULL,
+  ref_type VARCHAR(32) NULL,
   ref_id BIGINT UNSIGNED NULL,
   knowledge_point_id BIGINT UNSIGNED NULL,
-  tag_id BIGINT UNSIGNED NULL,
   duration_seconds INT NULL,
+  event_value VARCHAR(255) NULL,
   note VARCHAR(1000) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   KEY idx_behavior_user_time (user_id, created_at),
-  KEY idx_behavior_kp (knowledge_point_id),
-  KEY idx_behavior_tag (tag_id)
+  KEY idx_behavior_kp (knowledge_point_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS resource_knowledge (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  resource_id BIGINT UNSIGNED NOT NULL,
+  knowledge_point_id BIGINT UNSIGNED NOT NULL,
+  relation_type VARCHAR(24) NOT NULL DEFAULT 'cover',
+  coverage_weight DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
+  is_primary TINYINT NOT NULL DEFAULT 0,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_resource_knowledge (resource_id, knowledge_point_id, relation_type),
+  KEY idx_resource_knowledge_point (knowledge_point_id, resource_id),
+  CONSTRAINT ck_resource_knowledge_weight CHECK (coverage_weight BETWEEN 0 AND 1),
+  CONSTRAINT fk_resource_knowledge_resource FOREIGN KEY (resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_resource_knowledge_point FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_learning_path_snapshot (
@@ -555,28 +690,27 @@ INSERT IGNORE INTO sys_role(role_code, role_name, created_at, updated_at) VALUES
 ('TEACHER', '教师', NOW(3), NOW(3)),
 ('ADMIN', '管理员', NOW(3), NOW(3));
 
-INSERT IGNORE INTO qb_tag(id, tag_name, tag_code, parent_id, tag_level, tag_type, sort_order, created_at, updated_at, is_deleted) VALUES
-(1, 'C语言基础', 'c-basic', NULL, 1, 1, 10, NOW(3), NOW(3), 0),
-(2, '变量与数据类型', 'c-variable-type', 1, 2, 1, 20, NOW(3), NOW(3), 0),
-(3, '分支与循环', 'c-control-flow', 1, 2, 1, 30, NOW(3), NOW(3), 0),
-(4, '数组与字符串', 'c-array-string', 1, 2, 1, 40, NOW(3), NOW(3), 0),
-(5, '函数', 'c-function', 1, 2, 1, 50, NOW(3), NOW(3), 0),
-(6, '指针', 'c-pointer', 1, 2, 1, 60, NOW(3), NOW(3), 0);
+INSERT IGNORE INTO knowledge_point(id, name, code, parent_id, level, knowledge_type, difficulty, description, created_at, updated_at, is_deleted) VALUES
+(1, 'C语言基础', 'kp-c-basic', NULL, 1, 'concept', 2, 'C语言课程基础知识结构', NOW(3), NOW(3), 0),
+(2, '变量与数据类型', 'kp-c-variable-type', 1, 2, 'concept', 2, '变量声明、基本数据类型与类型转换', NOW(3), NOW(3), 0),
+(3, '分支与循环', 'kp-c-control-flow', 1, 2, 'concept', 3, 'if、switch、for、while 等控制结构', NOW(3), NOW(3), 0),
+(4, '数组与字符串', 'kp-c-array-string', 1, 2, 'concept', 3, '数组、字符数组与字符串处理', NOW(3), NOW(3), 0),
+(5, '函数', 'kp-c-function', 1, 2, 'concept', 3, '函数定义、调用、参数与返回值', NOW(3), NOW(3), 0),
+(6, '指针', 'kp-c-pointer', 1, 2, 'concept', 4, '指针、地址、指针运算与数组关系', NOW(3), NOW(3), 0);
 
-INSERT IGNORE INTO qb_knowledge_point(id, name, code, parent_id, tag_id, level, description, sort_order, created_at, updated_at, is_deleted) VALUES
-(1, 'C语言基础', 'kp-c-basic', NULL, 1, 1, 'C语言课程基础知识结构', 10, NOW(3), NOW(3), 0),
-(2, '变量与数据类型', 'kp-c-variable-type', 1, 2, 2, '变量声明、基本数据类型与类型转换', 20, NOW(3), NOW(3), 0),
-(3, '分支与循环', 'kp-c-control-flow', 1, 3, 2, 'if/switch/for/while 等控制结构', 30, NOW(3), NOW(3), 0),
-(4, '数组与字符串', 'kp-c-array-string', 1, 4, 2, '数组、字符数组与字符串处理', 40, NOW(3), NOW(3), 0),
-(5, '函数', 'kp-c-function', 1, 5, 2, '函数定义、调用、参数与返回值', 50, NOW(3), NOW(3), 0),
-(6, '指针', 'kp-c-pointer', 1, 6, 2, '指针、地址、指针运算与数组关系', 60, NOW(3), NOW(3), 0);
+INSERT IGNORE INTO qb_learning_resource(id, title, resource_type, resource_purpose, url, summary, generation_type, created_by, created_at, updated_at, is_deleted) VALUES
+(1, 'C语言变量与数据类型复习', 'article', 'learn', 'https://www.runoob.com/cprogramming/c-variables.html', '复习变量声明、基础类型、常量与类型转换。', 'manual', NULL, NOW(3), NOW(3), 0),
+(2, 'C语言循环结构复习', 'article', 'learn', 'https://www.runoob.com/cprogramming/c-loops.html', '复习 for、while、do while 的使用场景。', 'manual', NULL, NOW(3), NOW(3), 0),
+(3, 'C语言数组复习', 'article', 'learn', 'https://www.runoob.com/cprogramming/c-arrays.html', '复习一维数组、多维数组和数组遍历。', 'manual', NULL, NOW(3), NOW(3), 0),
+(4, 'C语言函数复习', 'article', 'learn', 'https://www.runoob.com/cprogramming/c-functions.html', '复习函数声明、定义、参数传递和返回值。', 'manual', NULL, NOW(3), NOW(3), 0),
+(5, 'C语言指针复习', 'article', 'learn', 'https://www.runoob.com/cprogramming/c-pointers.html', '复习指针变量、取地址、解引用和指针数组关系。', 'manual', NULL, NOW(3), NOW(3), 0);
 
-INSERT IGNORE INTO qb_learning_resource(title, resource_type, url, summary, knowledge_point_id, tag_id, created_by, created_at, updated_at, is_deleted) VALUES
-('C语言变量与数据类型复习', 'article', 'https://www.runoob.com/cprogramming/c-variables.html', '复习变量声明、基础类型、常量与类型转换。', 2, 2, NULL, NOW(3), NOW(3), 0),
-('C语言循环结构复习', 'article', 'https://www.runoob.com/cprogramming/c-loops.html', '复习 for、while、do while 的使用场景。', 3, 3, NULL, NOW(3), NOW(3), 0),
-('C语言数组复习', 'article', 'https://www.runoob.com/cprogramming/c-arrays.html', '复习一维数组、多维数组和数组遍历。', 4, 4, NULL, NOW(3), NOW(3), 0),
-('C语言函数复习', 'article', 'https://www.runoob.com/cprogramming/c-functions.html', '复习函数声明、定义、参数传递和返回值。', 5, 5, NULL, NOW(3), NOW(3), 0),
-('C语言指针复习', 'article', 'https://www.runoob.com/cprogramming/c-pointers.html', '复习指针变量、取地址、解引用和指针数组关系。', 6, 6, NULL, NOW(3), NOW(3), 0);
+INSERT IGNORE INTO resource_knowledge(resource_id, knowledge_point_id, relation_type, coverage_weight, is_primary, created_at) VALUES
+(1, 2, 'cover', 1.0000, 1, NOW(3)),
+(2, 3, 'cover', 1.0000, 1, NOW(3)),
+(3, 4, 'cover', 1.0000, 1, NOW(3)),
+(4, 5, 'cover', 1.0000, 1, NOW(3)),
+(5, 6, 'cover', 1.0000, 1, NOW(3));
 
 SET FOREIGN_KEY_CHECKS = 1;
 

@@ -161,8 +161,12 @@ public class AssignmentServiceImpl implements AssignmentService {
 
     @Override
     public AssignmentTargetConfigVO getTargets(Long assignmentId, Long actorId, boolean isAdmin) {
-        loadAssignmentForManage(assignmentId, actorId, isAdmin);
-        return buildTargetConfig(assignmentId);
+        QbAssignment assignment = loadAssignmentForManage(assignmentId, actorId, isAdmin);
+        AssignmentTargetConfigVO config = buildTargetConfig(assignmentId);
+        String lockedReason = targetMutationBlockReason(assignment);
+        config.setEditable(lockedReason == null);
+        config.setLockedReason(lockedReason);
+        return config;
     }
 
     @Override
@@ -257,14 +261,22 @@ public class AssignmentServiceImpl implements AssignmentService {
     }
 
     private void ensureTargetsMutable(QbAssignment assignment) {
+        String lockedReason = targetMutationBlockReason(assignment);
+        if (lockedReason != null) {
+            throw BizException.of(ErrorCode.FORBIDDEN, lockedReason);
+        }
+    }
+
+    private String targetMutationBlockReason(QbAssignment assignment) {
         Integer status = assignment.getPublishStatus();
         if (status != null && status == AssignmentPublishStatusEnum.CLOSED.getCode()) {
-            throw BizException.of(ErrorCode.FORBIDDEN, "作业已关闭，不能修改目标范围");
+            return "作业已关闭，不能修改目标范围";
         }
         if (status != null && status == AssignmentPublishStatusEnum.PUBLISHED.getCode()
                 && attemptMapper.countAllByAssignmentId(assignment.getId()) > 0) {
-            throw BizException.of(ErrorCode.FORBIDDEN, "已有作答记录，不能修改目标范围");
+            return "已有作答记录，不能修改目标范围";
         }
+        return null;
     }
 
     private AssignmentTargetConfigVO buildTargetConfig(Long assignmentId) {

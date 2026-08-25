@@ -150,23 +150,13 @@ Spring Boot 后端大多数接口返回统一结构：
 
 响应参数：当前用户 `id`、`username`、`displayName`、`email`、`role`。
 
-## 3 标签与题库 API
+## 3 知识点与题库 API
 
-### 3.1 标签管理
-
-| 功能 | 请求路径 | 方法 | 权限 | 参数 |
-| --- | --- | --- | --- | --- |
-| 标签列表 | `/api/tags` | GET | 已登录 | `keyword` |
-| 标签树 | `/api/tags/tree` | GET | 已登录 | 无 |
-| 创建标签 | `/api/tags` | POST | ADMIN | `tagName`、`tagCode`、`parentId`、`tagLevel`、`tagType`、`sortOrder` |
-| 修改标签 | `/api/tags/{tagId}` | PUT | ADMIN | 同创建标签 |
-| 删除标签 | `/api/tags/{tagId}` | DELETE | ADMIN | 路径参数 `tagId` |
-
-### 3.2 题目管理
+### 3.1 题目管理
 
 | 功能 | 请求路径 | 方法 | 权限 | 参数 |
 | --- | --- | --- | --- | --- |
-| 题目分页查询 | `/api/questions` | GET | 已登录 | `keyword`、`chapter`、`difficulty`、`questionType`、`status`、`bankReviewStatus`、`tagId`、`tagIds`、`source`、`studentView`、`page`、`size` |
+| 题目分页查询 | `/api/questions` | GET | 已登录 | `keyword`、`chapter`、`difficulty`、`questionType`、`status`、`bankReviewStatus`、`knowledgePointId`、`knowledgePointIds`、`source`、`studentView`、`page`、`size` |
 | 题目详情 | `/api/questions/{questionId}` | GET | 已登录 | 路径参数 `questionId` |
 | 创建题目 | `/api/questions` | POST | TEACHER/ADMIN | `QuestionUpsertRequest` |
 | 修改题目 | `/api/questions/{questionId}` | PUT | TEACHER/ADMIN | `QuestionUpsertRequest` |
@@ -191,7 +181,7 @@ Spring Boot 后端大多数接口返回统一结构：
 | analysisText | string | 否 | 解析 |
 | status | integer | 否 | 1 草稿，2 已发布，3 归档 |
 | options | array | 否 | 选项列表 |
-| tagIds | array | 否 | 标签 ID 列表 |
+| knowledgePointIds | array | 否 | 知识点 ID 列表 |
 
 ## 4 试卷、作业与作答 API
 
@@ -221,7 +211,7 @@ Spring Boot 后端大多数接口返回统一结构：
 | 作业详情 | `/api/assignments/{assignmentId}` | GET | 已登录 | 路径参数 `assignmentId` |
 | 发布作业 | `/api/assignments/{assignmentId}/publish` | POST | TEACHER/ADMIN | 路径参数 `assignmentId` |
 | 关闭作业 | `/api/assignments/{assignmentId}/close` | POST | TEACHER/ADMIN | 路径参数 `assignmentId` |
-| 读取投放配置 | `/api/assignments/{assignmentId}/targets` | GET | TEACHER/ADMIN | 返回全班目标与独立学生目标 |
+| 读取投放配置 | `/api/assignments/{assignmentId}/targets` | GET | TEACHER/ADMIN | 返回全班目标、独立学生目标及 `editable`、`lockedReason`，供客户端显示冻结状态 |
 | 设置投放对象 | `/api/assignments/{assignmentId}/targets` | PUT | TEACHER/ADMIN | `targets:[{classId,studentIds}]`；空 `studentIds` 表示全班，空 `targets` 表示无人可见；`retainedStudentIds` 保留已存在的独立学生目标 |
 | 移除独立学生目标 | `/api/assignments/{assignmentId}/targets/students/{studentId}` | DELETE | TEACHER/ADMIN | 路径参数 `assignmentId`、`studentId` |
 
@@ -399,7 +389,7 @@ Spring Boot 后端大多数接口返回统一结构：
 | --- | --- | --- | --- | --- |
 | 错题分页 | `/api/stats/wrong-questions` | GET | STUDENT | `page`、`size` 等过滤参数 |
 | 标记错题已解决 | `/api/stats/wrong-questions/{questionId}/resolve` | POST | STUDENT | 路径参数 `questionId` |
-| 掌握度 | `/api/stats/mastery` | GET | STUDENT | `tagType` |
+| 掌握度 | `/api/stats/mastery` | GET | STUDENT | 无；返回知识点掌握度 |
 | 能力画像 | `/api/stats/ability` | GET | STUDENT | 无 |
 | 题目统计 | `/api/stats/question-stats` | GET | STUDENT | `page`、`size` 等过滤参数 |
 

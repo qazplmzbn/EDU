@@ -8,4 +8,6 @@ import java.util.List;
 public class AssignmentTargetConfigVO {
     private List<AssignmentTargetClassVO> classTargets;
     private List<AssignmentTargetStudentVO> studentTargets;
+    private boolean editable;
+    private String lockedReason;
 }

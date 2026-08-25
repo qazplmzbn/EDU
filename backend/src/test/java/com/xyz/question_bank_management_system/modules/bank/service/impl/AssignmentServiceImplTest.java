@@ -27,10 +27,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -157,6 +159,77 @@ class AssignmentServiceImplTest {
                 () -> assignmentService.setTargets(82001L, request, 7001L, false));
 
         assertEquals(ErrorCode.FORBIDDEN, ex.getCode());
+    }
+
+    @Test
+    void getTargets_shouldMarkPublishedAssignmentWithAttemptsAsLocked() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.PUBLISHED.getCode());
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(attemptMapper.countAllByAssignmentId(82001L)).thenReturn(1L);
+        when(targetMapper.listClassIdsByAssignmentId(82001L)).thenReturn(List.of());
+        when(targetMapper.listStudentIdsByAssignmentId(82001L)).thenReturn(List.of());
+
+        var config = assignmentService.getTargets(82001L, 7001L, false);
+
+        assertFalse(config.isEditable());
+        assertEquals("已有作答记录，不能修改目标范围", config.getLockedReason());
+    }
+
+    @Test
+    void setTargets_shouldRejectStudentOutsideSelectedClass() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.DRAFT.getCode());
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of(selection(31L, List.of(1001L))));
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(classMapper.selectById(31L)).thenReturn(ownedClass(31L, 7001L));
+        when(classMemberMapper.countByClassAndStudent(31L, 1001L)).thenReturn(0L);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> assignmentService.setTargets(82001L, request, 7001L, false));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getCode());
+        verify(targetMapper, never()).deleteByAssignmentId(82001L);
+    }
+
+    @Test
+    void setTargets_shouldRejectDuplicateClassGroups() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.DRAFT.getCode());
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of(selection(31L, List.of()), selection(31L, List.of())));
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(classMapper.selectById(31L)).thenReturn(ownedClass(31L, 7001L));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> assignmentService.setTargets(82001L, request, 7001L, false));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getCode());
+        verify(targetMapper, never()).deleteByAssignmentId(82001L);
+    }
+
+    @Test
+    void setTargets_shouldAllowAdminToConfigureAnotherTeachersClass() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.DRAFT.getCode());
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of(selection(31L, List.of(1001L))));
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(classMapper.selectById(31L)).thenReturn(ownedClass(31L, 8001L));
+        when(classMemberMapper.countByClassAndStudent(31L, 1001L)).thenReturn(1L);
+
+        assignmentService.setTargets(82001L, request, 9001L, true);
+
+        verify(targetMapper).batchInsertStudents(82001L, List.of(1001L));
+    }
+
+    @Test
+    void removeStudentTarget_shouldRejectClosedAssignment() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.CLOSED.getCode());
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> assignmentService.removeStudentTarget(82001L, 1001L, 7001L, false));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getCode());
+        verify(targetMapper, never()).deleteStudentTarget(82001L, 1001L);
     }
 
     @Test
