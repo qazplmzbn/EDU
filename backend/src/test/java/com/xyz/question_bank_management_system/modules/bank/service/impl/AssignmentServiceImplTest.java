@@ -2,14 +2,21 @@ package com.xyz.question_bank_management_system.modules.bank.service.impl;
 
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.common.enums.AssignmentPublishStatusEnum;
+import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentTargetSelectionDTO;
+import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentTargetsRequest;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbAssignment;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetClassMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper;
+import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbPaperMapper;
 import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentMyItemVO;
+import com.xyz.question_bank_management_system.modules.org.entity.QbClass;
+import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMapper;
+import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
+import com.xyz.question_bank_management_system.modules.user.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -35,9 +42,17 @@ class AssignmentServiceImplTest {
     @Mock
     private QbAssignmentTargetMapper targetMapper;
     @Mock
-    private QbAssignmentTargetClassMapper targetClassMapper;
+    private QbAttemptMapper attemptMapper;
     @Mock
     private QbPaperMapper paperMapper;
+    @Mock
+    private QbClassMapper classMapper;
+    @Mock
+    private QbClassMemberMapper classMemberMapper;
+    @Mock
+    private SysUserMapper sysUserMapper;
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private AssignmentServiceImpl assignmentService;
@@ -81,15 +96,12 @@ class AssignmentServiceImplTest {
     }
 
     @Test
-    void detailForStudent_shouldRejectNonTargetUserWhenTargetsConfigured() {
+    void detailForStudent_shouldRejectNonTargetUserIncludingWhenNoTargetsExist() {
         QbAssignment assignment = new QbAssignment();
         assignment.setId(82001L);
         assignment.setPublishStatus(AssignmentPublishStatusEnum.PUBLISHED.getCode());
         when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
-        when(targetMapper.countByAssignmentId(82001L)).thenReturn(2L);
-        when(targetClassMapper.countByAssignmentId(82001L)).thenReturn(0L);
-        when(targetMapper.countByAssignmentAndUser(82001L, 1001L)).thenReturn(0L);
-        when(targetClassMapper.countByAssignmentAndStudent(82001L, 1001L)).thenReturn(0L);
+        when(targetMapper.countEligibleStudent(82001L, 1001L)).thenReturn(0L);
 
         BizException ex = assertThrows(BizException.class, () -> assignmentService.detailForStudent(82001L, 1001L));
 
@@ -102,13 +114,99 @@ class AssignmentServiceImplTest {
         assignment.setId(82001L);
         assignment.setPublishStatus(AssignmentPublishStatusEnum.CLOSED.getCode());
         when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
-        when(targetMapper.countByAssignmentId(82001L)).thenReturn(1L);
-        when(targetClassMapper.countByAssignmentId(82001L)).thenReturn(0L);
-        when(targetMapper.countByAssignmentAndUser(82001L, 1001L)).thenReturn(1L);
+        when(targetMapper.countEligibleStudent(82001L, 1001L)).thenReturn(1L);
 
         QbAssignment detail = assignmentService.detailForStudent(82001L, 1001L);
 
         assertNotNull(detail);
         assertEquals(82001L, detail.getId());
+    }
+
+    @Test
+    void setTargets_shouldPersistWholeClassAndSelectedStudents() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.DRAFT.getCode());
+        QbClass clazz = ownedClass(31L, 7001L);
+        AssignmentTargetSelectionDTO wholeClass = selection(31L, List.of());
+        AssignmentTargetSelectionDTO selectedStudents = selection(32L, List.of(1001L, 1002L));
+        QbClass secondClass = ownedClass(32L, 7001L);
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of(wholeClass, selectedStudents));
+
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(classMapper.selectById(31L)).thenReturn(clazz);
+        when(classMapper.selectById(32L)).thenReturn(secondClass);
+        when(classMemberMapper.countByClassAndStudent(32L, 1001L)).thenReturn(1L);
+        when(classMemberMapper.countByClassAndStudent(32L, 1002L)).thenReturn(1L);
+
+        assignmentService.setTargets(82001L, request, 7001L, false);
+
+        verify(targetMapper).deleteByAssignmentId(82001L);
+        verify(targetMapper).batchInsertClasses(82001L, List.of(31L));
+        verify(targetMapper).batchInsertStudents(82001L, List.of(1001L, 1002L));
+    }
+
+    @Test
+    void setTargets_shouldRejectPublishedAssignmentAfterAnyAttempt() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.PUBLISHED.getCode());
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of());
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(attemptMapper.countAllByAssignmentId(82001L)).thenReturn(1L);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> assignmentService.setTargets(82001L, request, 7001L, false));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getCode());
+    }
+
+    @Test
+    void setTargets_shouldRetainExistingDirectStudentsWhenRequested() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.DRAFT.getCode());
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of());
+        request.setRetainedStudentIds(List.of(1001L));
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(targetMapper.listStudentIdsByAssignmentId(82001L)).thenReturn(List.of(1001L));
+
+        assignmentService.setTargets(82001L, request, 7001L, false);
+
+        verify(targetMapper).batchInsertStudents(82001L, List.of(1001L));
+    }
+
+    @Test
+    void setTargets_shouldRejectRetentionOfUnknownDirectStudent() {
+        QbAssignment assignment = manageableAssignment(82001L, 7001L, AssignmentPublishStatusEnum.DRAFT.getCode());
+        AssignmentTargetsRequest request = new AssignmentTargetsRequest();
+        request.setTargets(List.of());
+        request.setRetainedStudentIds(List.of(1002L));
+        when(assignmentMapper.selectById(82001L)).thenReturn(assignment);
+        when(targetMapper.listStudentIdsByAssignmentId(82001L)).thenReturn(List.of(1001L));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> assignmentService.setTargets(82001L, request, 7001L, false));
+
+        assertEquals(ErrorCode.PARAM_ERROR, ex.getCode());
+    }
+
+    private QbAssignment manageableAssignment(Long id, Long creatorId, int status) {
+        QbAssignment assignment = new QbAssignment();
+        assignment.setId(id);
+        assignment.setCreatedBy(creatorId);
+        assignment.setPublishStatus(status);
+        return assignment;
+    }
+
+    private QbClass ownedClass(Long id, Long teacherId) {
+        QbClass clazz = new QbClass();
+        clazz.setId(id);
+        clazz.setTeacherId(teacherId);
+        return clazz;
+    }
+
+    private AssignmentTargetSelectionDTO selection(Long classId, List<Long> studentIds) {
+        AssignmentTargetSelectionDTO selection = new AssignmentTargetSelectionDTO();
+        selection.setClassId(classId);
+        selection.setStudentIds(studentIds);
+        return selection;
     }
 }

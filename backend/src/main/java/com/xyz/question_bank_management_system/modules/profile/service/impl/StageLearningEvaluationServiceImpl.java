@@ -89,7 +89,7 @@ public class StageLearningEvaluationServiceImpl implements StageLearningEvaluati
         if (classStudentIds != null) {
             ids.addAll(classStudentIds);
         }
-        List<Long> targetStudentIds = assignmentTargetMapper.listUserIdsByTeacherAssignments(teacherId);
+        List<Long> targetStudentIds = assignmentTargetMapper.listStudentIdsByTeacherAssignments(teacherId);
         if (targetStudentIds != null) {
             ids.addAll(targetStudentIds);
         }

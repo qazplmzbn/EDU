@@ -117,12 +117,8 @@ public class AttemptServiceImpl implements AttemptService {
             throw BizException.of(ErrorCode.FORBIDDEN, "\u4f5c\u4e1a\u5df2\u7ed3\u675f");
         }
 
-        long targetCount = targetMapper.countByAssignmentId(assignmentId);
-        if (targetCount > 0) {
-            long me = targetMapper.countByAssignmentAndUser(assignmentId, userId);
-            if (me <= 0) {
-                throw BizException.of(ErrorCode.FORBIDDEN, "\u4f60\u4e0d\u5728\u8be5\u4f5c\u4e1a\u7684\u76ee\u6807\u540d\u5355\u4e2d");
-            }
+        if (targetMapper.countEligibleStudent(assignmentId, userId) <= 0) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "\u4f60\u4e0d\u5728\u8be5\u4f5c\u4e1a\u7684\u76ee\u6807\u540d\u5355\u4e2d");
         }
 
         long usedAttempts = attemptMapper.countByAssignmentAndUser(assignmentId, userId);

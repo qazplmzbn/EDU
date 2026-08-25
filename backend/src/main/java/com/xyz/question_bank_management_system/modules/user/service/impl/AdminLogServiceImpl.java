@@ -115,6 +115,7 @@ public class AdminLogServiceImpl implements AdminLogService {
         labels.put("ASSIGNMENT_PUBLISH", "发布作业/考试");
         labels.put("ASSIGNMENT_CLOSE", "关闭作业/考试");
         labels.put("ASSIGNMENT_SET_TARGETS", "设置作业目标");
+        labels.put("ASSIGNMENT_REMOVE_STUDENT_TARGET", "移除作业独立学生目标");
         labels.put("ATTEMPT_START_ASSIGNMENT", "开始作业/考试");
         labels.put("ATTEMPT_START_PRACTICE", "开始题库练习");
         labels.put("ATTEMPT_SUBMIT", "提交作答");

@@ -5,6 +5,7 @@ import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentTarget
 import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentUpsertRequest;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbAssignment;
 import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentMyItemVO;
+import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentTargetConfigVO;
 
 public interface AssignmentService {
 
@@ -19,6 +20,10 @@ public interface AssignmentService {
     void close(Long assignmentId, Long actorId, boolean isAdmin);
 
     void setTargets(Long assignmentId, AssignmentTargetsRequest request, Long actorId, boolean isAdmin);
+
+    AssignmentTargetConfigVO getTargets(Long assignmentId, Long actorId, boolean isAdmin);
+
+    void removeStudentTarget(Long assignmentId, Long studentId, Long actorId, boolean isAdmin);
 
     /**
      * teacherId: 教师本人（教师端列表）；isAdmin=true 时忽略 teacherId 返回全量。

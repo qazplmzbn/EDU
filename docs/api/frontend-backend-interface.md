@@ -221,7 +221,9 @@ Spring Boot 后端大多数接口返回统一结构：
 | 作业详情 | `/api/assignments/{assignmentId}` | GET | 已登录 | 路径参数 `assignmentId` |
 | 发布作业 | `/api/assignments/{assignmentId}/publish` | POST | TEACHER/ADMIN | 路径参数 `assignmentId` |
 | 关闭作业 | `/api/assignments/{assignmentId}/close` | POST | TEACHER/ADMIN | 路径参数 `assignmentId` |
-| 设置投放对象 | `/api/assignments/{assignmentId}/targets` | PUT | TEACHER/ADMIN | `userIds`、`classIds` |
+| 读取投放配置 | `/api/assignments/{assignmentId}/targets` | GET | TEACHER/ADMIN | 返回全班目标与独立学生目标 |
+| 设置投放对象 | `/api/assignments/{assignmentId}/targets` | PUT | TEACHER/ADMIN | `targets:[{classId,studentIds}]`；空 `studentIds` 表示全班，空 `targets` 表示无人可见；`retainedStudentIds` 保留已存在的独立学生目标 |
+| 移除独立学生目标 | `/api/assignments/{assignmentId}/targets/students/{studentId}` | DELETE | TEACHER/ADMIN | 路径参数 `assignmentId`、`studentId` |
 
 `AssignmentUpsertRequest` 主要字段：`paperId`、`assignmentTitle`、`assignmentDesc`、`startTime`、`endTime`、`timeLimitMin`、`maxAttempts`、`shuffleQuestions`、`shuffleOptions`、`publishStatus`。
 

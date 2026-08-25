@@ -8,6 +8,7 @@ import com.xyz.question_bank_management_system.modules.bank.entity.QbAssignment;
 import com.xyz.question_bank_management_system.modules.bank.service.AssignmentService;
 import com.xyz.question_bank_management_system.util.SecurityContextUtil;
 import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentMyItemVO;
+import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentTargetConfigVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -101,6 +102,21 @@ public class AssignmentController {
         Long uid = SecurityContextUtil.getUserId();
         boolean isAdmin = hasRole("ROLE_ADMIN");
         assignmentService.setTargets(assignmentId, request, uid, isAdmin);
+        return ApiResponse.ok();
+    }
+
+    @GetMapping("/{assignmentId}/targets")
+    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    public ApiResponse<AssignmentTargetConfigVO> getTargets(@PathVariable Long assignmentId) {
+        Long uid = SecurityContextUtil.getUserId();
+        return ApiResponse.ok(assignmentService.getTargets(assignmentId, uid, hasRole("ROLE_ADMIN")));
+    }
+
+    @DeleteMapping("/{assignmentId}/targets/students/{studentId}")
+    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    public ApiResponse<Void> removeStudentTarget(@PathVariable Long assignmentId, @PathVariable Long studentId) {
+        Long uid = SecurityContextUtil.getUserId();
+        assignmentService.removeStudentTarget(assignmentId, studentId, uid, hasRole("ROLE_ADMIN"));
         return ApiResponse.ok();
     }
 

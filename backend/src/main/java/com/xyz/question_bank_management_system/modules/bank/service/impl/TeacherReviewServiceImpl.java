@@ -16,11 +16,9 @@ import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAnswerMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAppealMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetClassMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptQuestionMapper;
-import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbGradingRecordMapper;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
@@ -56,10 +54,8 @@ public class TeacherReviewServiceImpl implements TeacherReviewService {
     private final QbAppealMapper appealMapper;
     private final QbAssignmentMapper assignmentMapper;
     private final QbAssignmentTargetMapper targetMapper;
-    private final QbAssignmentTargetClassMapper targetClassMapper;
     private final QbAttemptMapper attemptMapper;
     private final QbAttemptQuestionMapper attemptQuestionMapper;
-    private final QbClassMemberMapper classMemberMapper;
     private final QbGradingRecordMapper gradingRecordMapper;
     private final QbLlmCallMapper llmCallMapper;
     private final SysUserMapper sysUserMapper;
@@ -461,20 +457,9 @@ public class TeacherReviewServiceImpl implements TeacherReviewService {
     }
 
     private List<Long> resolveAssignmentTargetStudentIds(QbAssignment assignment) {
-        LinkedHashSet<Long> studentIds = new LinkedHashSet<>();
-        List<Long> directUserIds = targetMapper.listUserIdsByAssignmentId(assignment.getId());
-        if (directUserIds != null) {
-            studentIds.addAll(directUserIds);
-        }
-        List<Long> classIds = targetClassMapper.listClassIdsByAssignmentId(assignment.getId());
-        if (classIds != null && !classIds.isEmpty()) {
-            studentIds.addAll(classMemberMapper.listStudentIdsByClassIds(classIds));
-        }
+        LinkedHashSet<Long> studentIds = new LinkedHashSet<>(targetMapper.listEligibleStudentIdsByAssignmentId(assignment.getId()));
         if (!studentIds.isEmpty()) {
             return new ArrayList<>(studentIds);
-        }
-        if (assignment.getCreatedBy() != null) {
-            studentIds.addAll(classMemberMapper.listStudentIdsByTeacherId(assignment.getCreatedBy()));
         }
         studentIds.addAll(attemptMapper.listUserIdsByAssignment(assignment.getId()));
         return new ArrayList<>(studentIds);

@@ -21,6 +21,9 @@ public interface QbAttemptMapper {
     @Select("SELECT COUNT(1) FROM qb_attempt WHERE assignment_id=#{assignmentId} AND user_id=#{userId}")
     long countByAssignmentAndUser(@Param("assignmentId") Long assignmentId, @Param("userId") Long userId);
 
+    @Select("SELECT COUNT(1) FROM qb_attempt WHERE assignment_id=#{assignmentId}")
+    long countAllByAssignmentId(@Param("assignmentId") Long assignmentId);
+
     @Select("SELECT * FROM qb_attempt WHERE user_id=#{userId} AND status IN (2,3,4) " +
             "AND submitted_at >= #{startAt} AND submitted_at < #{endAt} " +
             "ORDER BY submitted_at DESC, id DESC")

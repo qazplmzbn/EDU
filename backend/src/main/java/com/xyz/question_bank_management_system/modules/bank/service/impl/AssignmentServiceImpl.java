@@ -3,25 +3,35 @@ package com.xyz.question_bank_management_system.modules.bank.service.impl;
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.common.enums.AssignmentPublishStatusEnum;
 import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentTargetsRequest;
+import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentTargetSelectionDTO;
 import com.xyz.question_bank_management_system.modules.bank.dto.AssignmentUpsertRequest;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbAssignment;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbPaper;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetClassMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper;
+import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbPaperMapper;
+import com.xyz.question_bank_management_system.modules.org.entity.QbClass;
+import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMapper;
+import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
+import com.xyz.question_bank_management_system.modules.user.entity.SysUser;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
 import com.xyz.question_bank_management_system.modules.user.service.AuditLogService;
 import com.xyz.question_bank_management_system.modules.bank.service.AssignmentService;
 import com.xyz.question_bank_management_system.util.PageParamUtil;
 import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentMyItemVO;
+import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentTargetClassVO;
+import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentTargetConfigVO;
+import com.xyz.question_bank_management_system.modules.bank.vo.AssignmentTargetStudentVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -32,8 +42,11 @@ public class AssignmentServiceImpl implements AssignmentService {
 
     private final QbAssignmentMapper assignmentMapper;
     private final QbAssignmentTargetMapper targetMapper;
-    private final QbAssignmentTargetClassMapper targetClassMapper;
+    private final QbAttemptMapper attemptMapper;
     private final QbPaperMapper paperMapper;
+    private final QbClassMapper classMapper;
+    private final QbClassMemberMapper classMemberMapper;
+    private final SysUserMapper sysUserMapper;
     private final AuditLogService auditLogService;
 
     @Override
@@ -71,7 +84,6 @@ public class AssignmentServiceImpl implements AssignmentService {
         QbAssignment assignment = loadAssignmentForManage(assignmentId, actorId, isAdmin);
         assignmentMapper.softDelete(assignmentId);
         targetMapper.deleteByAssignmentId(assignmentId);
-        targetClassMapper.deleteByAssignmentId(assignmentId);
         recordAudit(actorId, "ASSIGNMENT_DELETE", "ASSIGNMENT", assignmentId, assignmentAuditSnapshot(assignment), null);
     }
 
@@ -88,23 +100,79 @@ public class AssignmentServiceImpl implements AssignmentService {
     @Override
     @Transactional
     public void setTargets(Long assignmentId, AssignmentTargetsRequest request, Long actorId, boolean isAdmin) {
-        loadAssignmentForManage(assignmentId, actorId, isAdmin);
+        QbAssignment assignment = loadAssignmentForManage(assignmentId, actorId, isAdmin);
+        ensureTargetsMutable(assignment);
+        if (request == null || request.getTargets() == null) {
+            throw BizException.of(ErrorCode.PARAM_ERROR, "targets 不能为空");
+        }
 
-        List<Long> userIds = distinctIds(request.getUserIds());
-        List<Long> classIds = distinctIds(request.getClassIds());
+        Map<String, Object> before = targetAuditSnapshot(assignmentId);
+        LinkedHashSet<Long> classIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> studentIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> existingDirectStudentIds = new LinkedHashSet<>(targetMapper.listStudentIdsByAssignmentId(assignmentId));
+        List<Long> retainedStudentIds = request.getRetainedStudentIds() == null
+                ? new java.util.ArrayList<>(existingDirectStudentIds)
+                : distinctIds(request.getRetainedStudentIds());
+        if (!existingDirectStudentIds.containsAll(retainedStudentIds)) {
+            throw BizException.of(ErrorCode.PARAM_ERROR, "只能保留当前已配置的独立学生目标");
+        }
+        studentIds.addAll(retainedStudentIds);
+        for (AssignmentTargetSelectionDTO selection : request.getTargets()) {
+            if (selection == null || selection.getClassId() == null || selection.getStudentIds() == null) {
+                throw BizException.of(ErrorCode.PARAM_ERROR, "每个目标组都必须包含 classId 和 studentIds");
+            }
+            Long classId = selection.getClassId();
+            if (!classIds.add(classId)) {
+                throw BizException.of(ErrorCode.PARAM_ERROR, "同一班级不能重复配置目标组");
+            }
+            QbClass clazz = classMapper.selectById(classId);
+            if (clazz == null) {
+                throw BizException.of(ErrorCode.NOT_FOUND, "目标班级不存在");
+            }
+            if (!isAdmin && !Objects.equals(clazz.getTeacherId(), actorId)) {
+                throw BizException.of(ErrorCode.FORBIDDEN, "只能为自己负责的班级配置作业目标");
+            }
+            List<Long> selectedStudents = distinctIds(selection.getStudentIds());
+            if (selectedStudents.isEmpty()) {
+                continue;
+            }
+            for (Long studentId : selectedStudents) {
+                if (studentId <= 0 || classMemberMapper.countByClassAndStudent(classId, studentId) <= 0) {
+                    throw BizException.of(ErrorCode.PARAM_ERROR, "指定学生不是目标班级的当前成员");
+                }
+                studentIds.add(studentId);
+            }
+        }
 
+        List<Long> wholeClassIds = request.getTargets().stream()
+                .filter(Objects::nonNull)
+                .filter(selection -> selection.getStudentIds() != null && selection.getStudentIds().isEmpty())
+                .map(AssignmentTargetSelectionDTO::getClassId)
+                .toList();
         targetMapper.deleteByAssignmentId(assignmentId);
-        targetClassMapper.deleteByAssignmentId(assignmentId);
-        if (!userIds.isEmpty()) {
-            targetMapper.batchInsert(assignmentId, userIds);
+        if (!wholeClassIds.isEmpty()) {
+            targetMapper.batchInsertClasses(assignmentId, wholeClassIds);
         }
-        if (!classIds.isEmpty()) {
-            targetClassMapper.batchInsert(assignmentId, classIds);
+        if (!studentIds.isEmpty()) {
+            targetMapper.batchInsertStudents(assignmentId, new java.util.ArrayList<>(studentIds));
         }
-        Map<String, Object> after = new LinkedHashMap<>();
-        after.put("userIds", userIds);
-        after.put("classIds", classIds);
-        recordAudit(actorId, "ASSIGNMENT_SET_TARGETS", "ASSIGNMENT", assignmentId, null, after);
+        recordAudit(actorId, "ASSIGNMENT_SET_TARGETS", "ASSIGNMENT", assignmentId, before, targetAuditSnapshot(assignmentId));
+    }
+
+    @Override
+    public AssignmentTargetConfigVO getTargets(Long assignmentId, Long actorId, boolean isAdmin) {
+        loadAssignmentForManage(assignmentId, actorId, isAdmin);
+        return buildTargetConfig(assignmentId);
+    }
+
+    @Override
+    @Transactional
+    public void removeStudentTarget(Long assignmentId, Long studentId, Long actorId, boolean isAdmin) {
+        QbAssignment assignment = loadAssignmentForManage(assignmentId, actorId, isAdmin);
+        ensureTargetsMutable(assignment);
+        Map<String, Object> before = targetAuditSnapshot(assignmentId);
+        targetMapper.deleteStudentTarget(assignmentId, studentId);
+        recordAudit(actorId, "ASSIGNMENT_REMOVE_STUDENT_TARGET", "ASSIGNMENT", assignmentId, before, targetAuditSnapshot(assignmentId));
     }
 
     @Override
@@ -138,12 +206,7 @@ public class AssignmentServiceImpl implements AssignmentService {
             throw BizException.of(ErrorCode.FORBIDDEN, "该作业当前不可用");
         }
 
-        long userTargetCount = targetMapper.countByAssignmentId(assignmentId);
-        long classTargetCount = targetClassMapper.countByAssignmentId(assignmentId);
-        boolean hasAnyTarget = userTargetCount > 0 || classTargetCount > 0;
-        if (hasAnyTarget
-                && targetMapper.countByAssignmentAndUser(assignmentId, userId) <= 0
-                && targetClassMapper.countByAssignmentAndStudent(assignmentId, userId) <= 0) {
+        if (targetMapper.countEligibleStudent(assignmentId, userId) <= 0) {
             throw BizException.of(ErrorCode.FORBIDDEN, "你不在该作业的目标名单中");
         }
         return a;
@@ -191,6 +254,55 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
+    }
+
+    private void ensureTargetsMutable(QbAssignment assignment) {
+        Integer status = assignment.getPublishStatus();
+        if (status != null && status == AssignmentPublishStatusEnum.CLOSED.getCode()) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "作业已关闭，不能修改目标范围");
+        }
+        if (status != null && status == AssignmentPublishStatusEnum.PUBLISHED.getCode()
+                && attemptMapper.countAllByAssignmentId(assignment.getId()) > 0) {
+            throw BizException.of(ErrorCode.FORBIDDEN, "已有作答记录，不能修改目标范围");
+        }
+    }
+
+    private AssignmentTargetConfigVO buildTargetConfig(Long assignmentId) {
+        AssignmentTargetConfigVO config = new AssignmentTargetConfigVO();
+        List<AssignmentTargetClassVO> classTargets = targetMapper.listClassIdsByAssignmentId(assignmentId).stream()
+                .map(classMapper::selectById)
+                .filter(Objects::nonNull)
+                .map(clazz -> {
+                    AssignmentTargetClassVO vo = new AssignmentTargetClassVO();
+                    vo.setClassId(clazz.getId());
+                    vo.setClassName(clazz.getClassName());
+                    vo.setClassCode(clazz.getClassCode());
+                    return vo;
+                })
+                .toList();
+        List<AssignmentTargetStudentVO> studentTargets = targetMapper.listStudentIdsByAssignmentId(assignmentId).stream()
+                .map(studentId -> {
+                    SysUser student = sysUserMapper.selectById(studentId);
+                    AssignmentTargetStudentVO vo = new AssignmentTargetStudentVO();
+                    vo.setStudentId(studentId);
+                    if (student != null) {
+                        vo.setUsername(student.getUsername());
+                        vo.setDisplayName(student.getDisplayName());
+                    }
+                    return vo;
+                })
+                .toList();
+        config.setClassTargets(classTargets);
+        config.setStudentTargets(studentTargets);
+        return config;
+    }
+
+    private Map<String, Object> targetAuditSnapshot(Long assignmentId) {
+        AssignmentTargetConfigVO config = buildTargetConfig(assignmentId);
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("classTargets", config.getClassTargets());
+        snapshot.put("studentTargets", config.getStudentTargets());
+        return snapshot;
     }
 
     private void ensurePaperUsable(Long paperId, Long actorId, boolean isAdmin) {

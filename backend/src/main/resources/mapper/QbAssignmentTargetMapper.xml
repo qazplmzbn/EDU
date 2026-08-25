@@ -2,11 +2,19 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper">
 
-    <insert id="batchInsert">
-        INSERT INTO qb_assignment_target(assignment_id, user_id, created_at)
+    <insert id="batchInsertStudents">
+        INSERT INTO qb_assignment_target(assignment_id, target_type, student_id, class_id, created_at)
         VALUES
-        <foreach collection="userIds" item="uid" separator=",">
-            (#{assignmentId}, #{uid}, NOW(3))
+        <foreach collection="studentIds" item="studentId" separator=",">
+            (#{assignmentId}, 'student', #{studentId}, NULL, NOW(3))
+        </foreach>
+    </insert>
+
+    <insert id="batchInsertClasses">
+        INSERT INTO qb_assignment_target(assignment_id, target_type, student_id, class_id, created_at)
+        VALUES
+        <foreach collection="classIds" item="classId" separator=",">
+            (#{assignmentId}, 'class', NULL, #{classId}, NOW(3))
         </foreach>
     </insert>
 

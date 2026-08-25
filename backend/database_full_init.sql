@@ -282,11 +282,21 @@ CREATE TABLE IF NOT EXISTS qb_assignment (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_assignment_target (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   assignment_id BIGINT UNSIGNED NOT NULL,
-  user_id BIGINT UNSIGNED NOT NULL,
+  target_type VARCHAR(16) NOT NULL,
+  student_id BIGINT UNSIGNED NULL,
+  class_id BIGINT UNSIGNED NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (assignment_id, user_id),
-  KEY idx_qb_assignment_target_user (user_id)
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_assignment_target_student (assignment_id, target_type, student_id),
+  UNIQUE KEY uk_assignment_target_class (assignment_id, target_type, class_id),
+  KEY idx_assignment_target_student (student_id, assignment_id),
+  KEY idx_assignment_target_class (class_id, assignment_id),
+  CONSTRAINT ck_qb_assignment_target_scope CHECK (
+    (target_type='student' AND student_id IS NOT NULL AND class_id IS NULL)
+    OR (target_type='class' AND class_id IS NOT NULL AND student_id IS NULL)
+  )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_class (
@@ -309,14 +319,6 @@ CREATE TABLE IF NOT EXISTS qb_class_member (
   joined_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (class_id, student_id),
   KEY idx_qb_class_member_student (student_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS qb_assignment_target_class (
-  assignment_id BIGINT UNSIGNED NOT NULL,
-  class_id BIGINT UNSIGNED NOT NULL,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (assignment_id, class_id),
-  KEY idx_qb_atc_class (class_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS qb_attempt (

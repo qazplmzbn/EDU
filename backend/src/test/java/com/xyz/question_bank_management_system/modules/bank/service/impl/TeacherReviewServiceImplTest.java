@@ -7,11 +7,9 @@ import com.xyz.question_bank_management_system.modules.bank.entity.QbAttemptQues
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAnswerMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAppealMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetClassMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptQuestionMapper;
-import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbGradingRecordMapper;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
@@ -47,10 +45,6 @@ class TeacherReviewServiceImplTest {
     private QbAttemptMapper attemptMapper;
     @Mock
     private QbAttemptQuestionMapper attemptQuestionMapper;
-    @Mock
-    private QbAssignmentTargetClassMapper targetClassMapper;
-    @Mock
-    private QbClassMemberMapper classMemberMapper;
     @Mock
     private QbGradingRecordMapper gradingRecordMapper;
     @Mock
