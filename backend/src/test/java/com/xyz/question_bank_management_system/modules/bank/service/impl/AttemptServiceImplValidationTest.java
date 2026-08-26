@@ -8,7 +8,7 @@ import com.xyz.question_bank_management_system.modules.bank.mapper.*;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
+import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
 import com.xyz.question_bank_management_system.modules.profile.service.UserAbilityService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -64,7 +64,7 @@ class AttemptServiceImplValidationTest {
     @Mock
     private StudentKnowledgeStateMapper studentKnowledgeStateMapper;
     @Mock
-    private QbUserAbilityMapper userAbilityMapper;
+    private StudentProfileService studentProfileService;
     @Mock
     private LlmService llmService;
     @Mock

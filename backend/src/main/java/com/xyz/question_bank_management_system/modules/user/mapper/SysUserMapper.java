@@ -44,4 +44,7 @@ public interface SysUserMapper {
             "WHERE u.is_deleted=0 AND u.status=1 AND r.role_code='TEACHER' " +
             "ORDER BY u.display_name ASC, u.id ASC")
     List<TeacherOptionVO> listTeacherOptions();
+
+    @Select("SELECT DISTINCT u.id FROM sys_user u JOIN sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id WHERE u.is_deleted=0 AND u.status=1 AND UPPER(r.role_code)='STUDENT' ORDER BY u.id")
+    List<Long> listActiveStudentIds();
 }

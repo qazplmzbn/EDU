@@ -1,247 +1,131 @@
 package com.xyz.question_bank_management_system.modules.profile.service.impl;
 
-import com.xyz.question_bank_management_system.modules.bank.entity.QbAttempt;
-import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
-import com.xyz.question_bank_management_system.modules.user.entity.SysUser;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
-import com.xyz.question_bank_management_system.modules.bank.mapper.QbAssignmentTargetMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
-import com.xyz.question_bank_management_system.modules.knowledge.mapper.KnowledgePointMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
+import com.xyz.question_bank_management_system.modules.profile.entity.StageEvaluation;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentAbilityState;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentProfileSnapshot;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StageEvaluationMapper;
+import com.xyz.question_bank_management_system.modules.profile.mapper.StudentAbilityStateMapper;
 import com.xyz.question_bank_management_system.modules.profile.service.StageLearningEvaluationService;
-import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
+import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
 import com.xyz.question_bank_management_system.modules.profile.vo.StageLearningEvaluationVO;
+import com.xyz.question_bank_management_system.modules.user.entity.SysUser;
+import com.xyz.question_bank_management_system.modules.user.mapper.SysUserMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 @Service
+@RequiredArgsConstructor
 public class StageLearningEvaluationServiceImpl implements StageLearningEvaluationService {
-
-    private static final String PLACEHOLDER_TEXT =
-            "阶段性学习评价算法框架已预留：后续可接入学生掌握状态超图、阶段目标达成度、知识点迁移路径和学习行为序列模型。";
-
-    private final QbAttemptMapper attemptMapper;
-    private final QbAssignmentTargetMapper assignmentTargetMapper;
-    private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
-    private final KnowledgePointMapper knowledgePointMapper;
-    private final QbUserAbilityMapper userAbilityMapper;
+    private final StageEvaluationMapper evaluationMapper;
+    private final StudentAbilityStateMapper abilityStateMapper;
+    private final StudentProfileService studentProfileService;
     private final QbClassMemberMapper classMemberMapper;
-    private final SysUserMapper sysUserMapper;
+    private final SysUserMapper userMapper;
+    private final ObjectMapper objectMapper;
 
-    public StageLearningEvaluationServiceImpl(QbAttemptMapper attemptMapper,
-                                          QbAssignmentTargetMapper assignmentTargetMapper,
-                                          StudentKnowledgeStateMapper studentKnowledgeStateMapper,
-                                          KnowledgePointMapper knowledgePointMapper,
-                                          QbUserAbilityMapper userAbilityMapper,
-                                          QbClassMemberMapper classMemberMapper,
-                                          SysUserMapper sysUserMapper) {
-        this.attemptMapper = attemptMapper;
-        this.assignmentTargetMapper = assignmentTargetMapper;
-        this.studentKnowledgeStateMapper = studentKnowledgeStateMapper;
-        this.knowledgePointMapper = knowledgePointMapper;
-        this.userAbilityMapper = userAbilityMapper;
-        this.classMemberMapper = classMemberMapper;
-        this.sysUserMapper = sysUserMapper;
+    @Override
+    @Transactional
+    public StageLearningEvaluationVO generate(Long operatorId, boolean admin, Long studentId, String stage, LocalDate startDate, LocalDate endDate) {
+        requireVisible(operatorId, admin, studentId);
+        StageWindow window = window(stage, startDate, endDate);
+        studentProfileService.refreshAssessment(studentId);
+        StudentProfileSnapshot snapshot = studentProfileService.createSnapshot(studentId, "assessment", null);
+        List<StudentAbilityState> states = abilityStateMapper.selectByUserId(studentId);
+        double overall = states.stream().map(StudentAbilityState::getScore).filter(Objects::nonNull).mapToDouble(BigDecimal::doubleValue).average().orElse(0d);
+        StageEvaluation evaluation = new StageEvaluation();
+        evaluation.setUserId(studentId); evaluation.setStageType(window.type); evaluation.setStartDate(window.start); evaluation.setEndDate(window.end);
+        evaluation.setProfileSnapshotId(snapshot.getId()); evaluation.setOverallScore(BigDecimal.valueOf(overall));
+        evaluation.setDimensionScoresJson(json(states));
+        evaluation.setEvaluationText("基于持久化学生画像生成的" + window.name + "阶段评价。");
+        evaluation.setEvaluatorType(admin ? "system" : "teacher"); evaluation.setStatus("final"); evaluationMapper.insert(evaluation);
+        return toVo(evaluation, true);
     }
 
+    @Override
     public StageLearningEvaluationVO myEvaluation(Long userId, String stage, LocalDate startDate, LocalDate endDate) {
-        return buildEvaluation(userId, resolveStage(stage, startDate, endDate));
+        StageWindow window = window(stage, startDate, endDate);
+        StageEvaluation evaluation = evaluationMapper.latest(userId, window.type, window.start, window.end);
+        return evaluation == null ? notGenerated(userId, window) : toVo(evaluation, true);
     }
 
-    public List<StageLearningEvaluationVO> teacherEvaluations(Long teacherId,
-                                                              boolean admin,
-                                                              Long studentId,
-                                                              String stage,
-                                                              LocalDate startDate,
-                                                              LocalDate endDate) {
-        StageWindow window = resolveStage(stage, startDate, endDate);
-        List<Long> studentIds;
-        if (studentId != null) {
-            if (!admin && !teacherVisibleStudentIds(teacherId).contains(studentId)) {
-                throw BizException.of(ErrorCode.FORBIDDEN, "只能查看自己班级学生的阶段评价");
-            }
-            studentIds = List.of(studentId);
-        } else {
-            studentIds = admin ? attemptMapper.listRecentStudentIds(80) : teacherVisibleStudentIds(teacherId);
-        }
-        return studentIds.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .limit(80)
-                .map(id -> buildEvaluation(id, window))
-                .toList();
+    @Override
+    public List<StageLearningEvaluationVO> teacherEvaluations(Long teacherId, boolean admin, Long studentId, String stage, LocalDate startDate, LocalDate endDate) {
+        StageWindow window = window(stage, startDate, endDate);
+        List<Long> ids = studentId == null ? (admin ? userMapper.listActiveStudentIds() : classMemberMapper.listStudentIdsByTeacherId(teacherId)) : List.of(studentId);
+        if (studentId != null) requireVisible(teacherId, admin, studentId);
+        return ids.stream().filter(Objects::nonNull).distinct().map(id -> {
+            StageEvaluation evaluation = evaluationMapper.latest(id, window.type, window.start, window.end);
+            return evaluation == null ? notGenerated(id, window) : toVo(evaluation, true);
+        }).toList();
     }
 
-    private List<Long> teacherVisibleStudentIds(Long teacherId) {
-        LinkedHashSet<Long> ids = new LinkedHashSet<>();
-        List<Long> classStudentIds = classMemberMapper.listStudentIdsByTeacherId(teacherId);
-        if (classStudentIds != null) {
-            ids.addAll(classStudentIds);
-        }
-        List<Long> targetStudentIds = assignmentTargetMapper.listStudentIdsByTeacherAssignments(teacherId);
-        if (targetStudentIds != null) {
-            ids.addAll(targetStudentIds);
-        }
-        List<Long> attemptedStudentIds = attemptMapper.listStudentIdsByTeacherAssignments(teacherId);
-        if (attemptedStudentIds != null) {
-            ids.addAll(attemptedStudentIds);
-        }
-        return ids.stream().filter(Objects::nonNull).toList();
+    @Override
+    public List<StageLearningEvaluationVO> history(Long requesterId, boolean admin, Long studentId, int limit) {
+        requireVisible(requesterId, admin, studentId);
+        return evaluationMapper.history(studentId, Math.max(1, Math.min(100, limit))).stream().map(e -> toVo(e, true)).toList();
     }
 
-    private StageLearningEvaluationVO buildEvaluation(Long studentId, StageWindow window) {
-        SysUser student = sysUserMapper.selectById(studentId);
-        List<QbAttempt> attempts = attemptMapper.selectByUserAndSubmittedRange(
-                studentId,
-                window.start().atStartOfDay(),
-                window.end().plusDays(1).atStartOfDay()
-        );
-        List<StudentKnowledgeState> masteryRows = studentKnowledgeStateMapper.selectByUserId(studentId);
-        QbUserAbility ability = userAbilityMapper.selectByUserId(studentId);
-
-        int completed = attempts == null ? 0 : attempts.size();
-        double averageScore = attempts == null || attempts.isEmpty()
-                ? 0.0
-                : attempts.stream()
-                .map(QbAttempt::getTotalScore)
-                .filter(Objects::nonNull)
-                .mapToInt(Integer::intValue)
-                .average()
-                .orElse(0.0);
-        double masteryAverage = masteryRows == null || masteryRows.isEmpty()
-                ? 0.0
-                : masteryRows.stream()
-                .map(StudentKnowledgeState::getMasteryValue)
-                .filter(Objects::nonNull)
-                .mapToDouble(value -> value.doubleValue())
-                .average()
-                .orElse(0.0);
-        int abilityScore = ability == null || ability.getAbilityScore() == null ? 0 : ability.getAbilityScore();
-
+    private StageLearningEvaluationVO toVo(StageEvaluation evaluation, boolean generated) {
         StageLearningEvaluationVO vo = new StageLearningEvaluationVO();
-        vo.setStudentId(studentId);
-        vo.setStudentName(displayName(student, studentId));
-        vo.setStageKey(window.key());
-        vo.setStageName(window.name());
-        vo.setStageStart(window.start());
-        vo.setStageEnd(window.end());
-        vo.setGeneratedAt(LocalDateTime.now());
-        vo.setAbilityScore(abilityScore);
-        vo.setAttemptCount(completed);
-        vo.setCompletedAttemptCount(completed);
-        vo.setAverageScore(round1(averageScore));
-        vo.setMasteryAverage(round3(masteryAverage));
-        vo.setOverallLevel(levelOf((int) Math.round((abilityScore + averageScore + masteryAverage * 100) / 3.0)));
-        vo.setAlgorithmStatus("FRAMEWORK_ONLY");
-        vo.setAlgorithmPlaceholder(PLACEHOLDER_TEXT);
-        vo.setSummary(buildSummary(vo));
-        vo.setDimensions(List.of(
-                dimension("ABILITY", "能力水平", abilityScore, "由现有能力值生成，后续可替换为阶段能力增长模型。"),
-                dimension("MASTERY", "知识掌握", (int) Math.round(masteryAverage * 100), "由知识点掌握度均值生成，后续可接入掌握状态超图。"),
-                dimension("PERFORMANCE", "作答表现", (int) Math.round(averageScore), "由阶段作答平均分生成，后续可加入题型、难度和目标达成度。"),
-                dimension("PARTICIPATION", "学习参与", Math.min(100, completed * 12), "由阶段作答次数生成，后续可融合资源学习和行为序列。")
-        ));
-        vo.setWeakKnowledgePoints(buildWeakPoints(masteryRows));
-        vo.setSuggestions(buildSuggestions(vo));
+        SysUser student = userMapper.selectById(evaluation.getUserId());
+        vo.setEvaluationId(evaluation.getId()); vo.setGenerated(generated); vo.setStudentId(evaluation.getUserId());
+        vo.setStudentName(student == null ? String.valueOf(evaluation.getUserId()) : student.getDisplayName());
+        vo.setStageKey(evaluation.getStageType()); vo.setStageName(stageName(evaluation.getStageType()));
+        vo.setStageStart(evaluation.getStartDate()); vo.setStageEnd(evaluation.getEndDate()); vo.setGeneratedAt(evaluation.getCreatedAt());
+        vo.setAbilityScore(studentProfileService.abilityScore(evaluation.getUserId()));
+        vo.setOverallLevel(level(evaluation.getOverallScore() == null ? 0 : evaluation.getOverallScore().doubleValue()));
+        vo.setSummary(evaluation.getEvaluationText()); vo.setAlgorithmStatus("PERSISTED");
+        vo.setAlgorithmPlaceholder("评价结果已固化为历史版本，不会因后续学习行为而改变。");
+        vo.setDimensions(dimensions(evaluation.getDimensionScoresJson()));
+        vo.setSuggestions(List.of("优先复习当前薄弱知识点。", "完成新的学习活动后，可由教师重新生成下一版阶段评价。"));
         return vo;
     }
 
-    private List<StageLearningEvaluationVO.WeakKnowledgePoint> buildWeakPoints(List<StudentKnowledgeState> masteryRows) {
-        if (masteryRows == null) {
-            return List.of();
+    private StageLearningEvaluationVO notGenerated(Long userId, StageWindow window) {
+        StageLearningEvaluationVO vo = new StageLearningEvaluationVO(); vo.setGenerated(false); vo.setStudentId(userId);
+        SysUser student = userMapper.selectById(userId); vo.setStudentName(student == null ? String.valueOf(userId) : student.getDisplayName());
+        vo.setStageKey(window.type); vo.setStageName(window.name); vo.setStageStart(window.start); vo.setStageEnd(window.end);
+        vo.setAbilityScore(studentProfileService.abilityScore(userId)); vo.setOverallLevel("pending");
+        vo.setSummary("该阶段尚未生成正式评价。"); vo.setAlgorithmStatus("NOT_GENERATED");
+        vo.setAlgorithmPlaceholder("请由本班教师或管理员显式生成阶段评价。"); return vo;
+    }
+
+    private List<StageLearningEvaluationVO.Dimension> dimensions(String json) {
+        try {
+            List<StudentAbilityState> states = objectMapper.readValue(json == null ? "[]" : json, new TypeReference<List<StudentAbilityState>>() {});
+            return states.stream().map(state -> { StageLearningEvaluationVO.Dimension d = new StageLearningEvaluationVO.Dimension();
+                d.setCode(state.getDimensionCode()); d.setName(state.getDimensionName()); int score = state.getScore() == null ? 0 : state.getScore().intValue();
+                d.setScore(score); d.setLevel(level(score)); d.setDescription("持久化能力维度状态"); return d; }).toList();
+        } catch (Exception ignored) { return List.of(); }
+    }
+
+    private void requireVisible(Long teacherId, boolean admin, Long studentId) {
+        if (studentId == null) throw BizException.of(ErrorCode.PARAM_ERROR, "学生不能为空");
+        if (!admin && !classMemberMapper.listStudentIdsByTeacherId(teacherId).contains(studentId)) throw BizException.of(ErrorCode.FORBIDDEN, "只能操作自己班级学生的阶段评价");
+    }
+    private StageWindow window(String stage, LocalDate start, LocalDate end) {
+        if (start != null || end != null) {
+            if (start == null || end == null || end.isBefore(start)) throw BizException.of(ErrorCode.PARAM_ERROR, "自定义阶段必须提供合法的开始和结束日期");
+            return new StageWindow("custom", "自定义阶段", start, end);
         }
-        return masteryRows.stream()
-                .filter(row -> row.getKnowledgePointId() != null)
-                .sorted(Comparator.comparingDouble(row -> row.getMasteryValue() == null ? 0.0 : row.getMasteryValue().doubleValue()))
-                .limit(6)
-                .map(row -> {
-                    StageLearningEvaluationVO.WeakKnowledgePoint point = new StageLearningEvaluationVO.WeakKnowledgePoint();
-                    point.setKnowledgePointId(row.getKnowledgePointId());
-                    var knowledgePoint = knowledgePointMapper.selectById(row.getKnowledgePointId());
-                    point.setKnowledgePointName(knowledgePoint == null ? String.valueOf(row.getKnowledgePointId()) : knowledgePoint.getName());
-                    point.setMasteryValue(row.getMasteryValue() == null ? 0.0 : row.getMasteryValue().doubleValue());
-                    point.setAttemptCount(row.getAttemptCount());
-                    return point;
-                })
-                .toList();
+        LocalDate today = LocalDate.now(); String type = stage == null || stage.isBlank() ? "month" : stage.toLowerCase(Locale.ROOT);
+        return switch (type) { case "week" -> new StageWindow("week", "本周", today.with(java.time.DayOfWeek.MONDAY), today.with(java.time.DayOfWeek.SUNDAY));
+            case "term" -> new StageWindow("term", "本学期", today.getMonthValue() <= 6 ? LocalDate.of(today.getYear(), 1, 1) : LocalDate.of(today.getYear(), 7, 1), today.getMonthValue() <= 6 ? LocalDate.of(today.getYear(), 6, 30) : LocalDate.of(today.getYear(), 12, 31));
+            default -> new StageWindow("month", "本月", today.withDayOfMonth(1), today.with(TemporalAdjusters.lastDayOfMonth())); };
     }
-
-    private List<String> buildSuggestions(StageLearningEvaluationVO vo) {
-        return List.of(
-                "根据阶段评价框架，优先复习掌握度较低的知识点。",
-                "后续算法可在此接入掌握状态超图，自动生成下一阶段训练题目。",
-                "教师可结合该评价结果调整作业难度、知识点覆盖和复核重点。"
-        );
-    }
-
-    private StageLearningEvaluationVO.Dimension dimension(String code, String name, int score, String description) {
-        int safeScore = Math.max(0, Math.min(100, score));
-        StageLearningEvaluationVO.Dimension dimension = new StageLearningEvaluationVO.Dimension();
-        dimension.setCode(code);
-        dimension.setName(name);
-        dimension.setScore(safeScore);
-        dimension.setLevel(levelOf(safeScore));
-        dimension.setDescription(description);
-        return dimension;
-    }
-
-    private String buildSummary(StageLearningEvaluationVO vo) {
-        return "当前阶段评价已生成基础画像：能力值 " + vo.getAbilityScore()
-                + "，阶段作答 " + vo.getCompletedAttemptCount()
-                + " 次，平均分 " + vo.getAverageScore()
-                + "。核心评价算法后续可在该模块中补充。";
-    }
-
-    private StageWindow resolveStage(String stage, LocalDate startDate, LocalDate endDate) {
-        String key = stage == null || stage.isBlank() ? "month" : stage.trim().toLowerCase();
-        LocalDate today = LocalDate.now();
-        if (startDate != null && endDate != null) {
-            return new StageWindow("custom", "自定义阶段", startDate, endDate);
-        }
-        if ("week".equals(key)) {
-            LocalDate start = today.minusDays(6);
-            return new StageWindow("week", "近 7 天", start, today);
-        }
-        if ("term".equals(key)) {
-            LocalDate start = today.getMonthValue() >= 9 ? LocalDate.of(today.getYear(), 9, 1) : LocalDate.of(today.getYear(), 3, 1);
-            return new StageWindow("term", "本学期", start, today);
-        }
-        LocalDate start = today.with(TemporalAdjusters.firstDayOfMonth());
-        return new StageWindow("month", "本月", start, today);
-    }
-
-    private String levelOf(int score) {
-        if (score >= 85) return "优秀";
-        if (score >= 70) return "良好";
-        if (score >= 55) return "发展中";
-        return "需关注";
-    }
-
-    private String displayName(SysUser user, Long fallbackId) {
-        if (user == null) return "学生 " + fallbackId;
-        if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) return user.getDisplayName();
-        return user.getUsername() == null ? "学生 " + fallbackId : user.getUsername();
-    }
-
-    private double round1(double value) {
-        return Math.round(value * 10.0) / 10.0;
-    }
-
-    private double round3(double value) {
-        return Math.round(value * 1000.0) / 1000.0;
-    }
-
-    private record StageWindow(String key, String name, LocalDate start, LocalDate end) {
-    }
+    private String stageName(String type) { return switch (type) { case "week" -> "本周"; case "term" -> "本学期"; case "custom" -> "自定义阶段"; default -> "本月"; }; }
+    private String level(double score) { return score >= 80 ? "mastered" : score >= 50 ? "basic" : "weak"; }
+    private String json(Object value) { try { return objectMapper.writeValueAsString(value); } catch (Exception e) { return "[]"; } }
+    private record StageWindow(String type, String name, LocalDate start, LocalDate end) {}
 }

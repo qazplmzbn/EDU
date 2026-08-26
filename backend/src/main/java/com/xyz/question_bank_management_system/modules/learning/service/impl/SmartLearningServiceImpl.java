@@ -20,10 +20,9 @@ import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowle
 import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgeRelation;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgeRelationMapper;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
+import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
 import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
@@ -66,7 +65,7 @@ public class SmartLearningServiceImpl implements SmartLearningService {
     private final QbLearningResourceMapper resourceMapper;
     private final QbLearningBehaviorMapper behaviorMapper;
     private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
-    private final QbUserAbilityMapper userAbilityMapper;
+    private final StudentProfileService studentProfileService;
     private final QbAttemptMapper attemptMapper;
     private final QbLlmCallMapper llmCallMapper;
     private final QbGradingRecordMapper gradingRecordMapper;
@@ -249,15 +248,15 @@ public class SmartLearningServiceImpl implements SmartLearningService {
     public Long recordBehavior(QbLearningBehavior behavior, Long userId) {
         behavior.setUserId(userId);
         behaviorMapper.insert(behavior);
+        studentProfileService.refreshAfterBehavior(userId, behavior.getId(), behavior.getCreatedAt());
         return behavior.getId();
     }
 
     public LearningProfile profile(Long userId) {
         List<StudentKnowledgeState> mastery = studentKnowledgeStateMapper.selectByUserId(userId);
         List<QbKnowledgePoint> weakPoints = knowledgePointMapper.selectWeakest(userId, 6);
-        QbUserAbility ability = userAbilityMapper.selectByUserId(userId);
         LearningProfile profile = new LearningProfile();
-        profile.setAbilityScore(ability == null ? 0 : ability.getAbilityScore());
+        profile.setAbilityScore(studentProfileService.abilityScore(userId));
         profile.setBehaviorCount(behaviorMapper.countByUserId(userId));
         profile.setStudyDurationSeconds(behaviorMapper.sumDurationByUserId(userId));
         profile.setMastery(mastery);

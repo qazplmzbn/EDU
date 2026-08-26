@@ -1,6 +1,6 @@
 package com.xyz.question_bank_management_system.modules.bank.mapper;
 
-import com.xyz.question_bank_management_system.modules.profile.entity.QbAbilitySample;
+import com.xyz.question_bank_management_system.modules.profile.entity.ProfileAssessmentSample;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbAnswer;
 import com.xyz.question_bank_management_system.modules.bank.vo.TeacherReviewAnswerItemVO;
 import org.apache.ibatis.annotations.*;
@@ -166,7 +166,7 @@ public interface QbAnswerMapper {
                                           @Param("limit") int limit);
 
     @Select({
-            "SELECT a.question_id,",
+            "SELECT a.id AS answer_id, a.question_id,",
             "       a.final_score,",
             "       aq.score AS max_score,",
             "       aq.difficulty,",
@@ -179,5 +179,5 @@ public interface QbAnswerMapper {
             "  AND a.answer_status = 2",
             "ORDER BY event_time ASC, a.id ASC"
     })
-    List<QbAbilitySample> selectAbilitySamplesByUserId(@Param("userId") Long userId);
+    List<ProfileAssessmentSample> selectAbilitySamplesByUserId(@Param("userId") Long userId);
 }

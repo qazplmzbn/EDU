@@ -3,13 +3,13 @@ package com.xyz.question_bank_management_system.modules.bank.service.impl;
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestionUserStat;
 import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbWrongQuestion;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionUserStatMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
+import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
+import com.xyz.question_bank_management_system.modules.profile.vo.AbilityScoreVO;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbWrongQuestionMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,7 +37,7 @@ class StatsServiceImplTest {
     @Mock
     private StudentKnowledgeStateMapper studentKnowledgeStateMapper;
     @Mock
-    private QbUserAbilityMapper userAbilityMapper;
+    private StudentProfileService studentProfileService;
 
     @InjectMocks
     private StatsServiceImpl statsService;
@@ -110,9 +110,9 @@ class StatsServiceImplTest {
 
     @Test
     void ability_shouldReturnZeroWhenNoRecord() {
-        when(userAbilityMapper.selectByUserId(1001L)).thenReturn(null);
+        when(studentProfileService.abilityScore(1001L)).thenReturn(0);
 
-        QbUserAbility ability = statsService.ability(1001L);
+        AbilityScoreVO ability = statsService.ability(1001L);
 
         assertEquals(1001L, ability.getUserId());
         assertEquals(0, ability.getAbilityScore());

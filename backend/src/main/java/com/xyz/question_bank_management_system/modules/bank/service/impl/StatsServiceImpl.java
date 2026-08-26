@@ -3,13 +3,13 @@ package com.xyz.question_bank_management_system.modules.bank.service.impl;
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbQuestionUserStat;
 import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.bank.entity.QbWrongQuestion;
 import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbQuestionUserStatMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
+import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
+import com.xyz.question_bank_management_system.modules.profile.vo.AbilityScoreVO;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbWrongQuestionMapper;
 import com.xyz.question_bank_management_system.modules.bank.service.StatsService;
 import com.xyz.question_bank_management_system.util.PageParamUtil;
@@ -26,7 +26,7 @@ public class StatsServiceImpl implements StatsService {
     private final QbWrongQuestionMapper wrongQuestionMapper;
     private final QbQuestionUserStatMapper questionUserStatMapper;
     private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
-    private final QbUserAbilityMapper userAbilityMapper;
+    private final StudentProfileService studentProfileService;
 
     @Override
     public PageResponse<QbWrongQuestion> wrongQuestions(Long userId, Long knowledgePointId, String chapter, Boolean isResolved, long page, long size) {
@@ -69,15 +69,11 @@ public class StatsServiceImpl implements StatsService {
     }
 
     @Override
-    public QbUserAbility ability(Long userId) {
-        QbUserAbility ability = userAbilityMapper.selectByUserId(userId);
-        if (ability != null) {
-            return ability;
-        }
-        QbUserAbility empty = new QbUserAbility();
-        empty.setUserId(userId);
-        empty.setAbilityScore(0);
-        return empty;
+    public AbilityScoreVO ability(Long userId) {
+        AbilityScoreVO ability = new AbilityScoreVO();
+        ability.setUserId(userId);
+        ability.setAbilityScore(studentProfileService.abilityScore(userId));
+        return ability;
     }
 
     private String trimToNull(String value) {

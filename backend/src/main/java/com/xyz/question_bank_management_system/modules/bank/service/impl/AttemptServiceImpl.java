@@ -16,9 +16,8 @@ import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
-import com.xyz.question_bank_management_system.modules.profile.mapper.QbUserAbilityMapper;
+import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
 import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
 import com.xyz.question_bank_management_system.modules.bank.service.AttemptService;
 import com.xyz.question_bank_management_system.modules.user.service.AuditLogService;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
@@ -83,7 +82,7 @@ public class AttemptServiceImpl implements AttemptService {
     private final QbQuestionUserStatMapper questionUserStatMapper;
     private final QbWrongQuestionMapper wrongQuestionMapper;
     private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
-    private final QbUserAbilityMapper userAbilityMapper;
+    private final StudentProfileService studentProfileService;
     private final UserAbilityService userAbilityService;
 
     private final LlmService llmService;
@@ -1002,8 +1001,7 @@ public class AttemptServiceImpl implements AttemptService {
             }
         }
 
-        QbUserAbility userAbility = userAbilityMapper.selectByUserId(userId);
-        double theta = abilityScoreToTheta(userAbility == null ? 0 : userAbility.getAbilityScore());
+        double theta = abilityScoreToTheta(studentProfileService.abilityScore(userId));
 
         List<AdaptiveCandidateScore> ranked = new ArrayList<>();
         for (QbQuestion q : candidates) {

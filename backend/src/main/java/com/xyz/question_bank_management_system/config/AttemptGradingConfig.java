@@ -33,4 +33,17 @@ public class AttemptGradingConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "agentTaskExecutor")
+    public TaskExecutor agentTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("agent-task-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
 }

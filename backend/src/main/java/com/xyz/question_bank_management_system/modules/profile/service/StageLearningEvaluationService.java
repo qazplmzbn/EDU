@@ -7,6 +7,8 @@ import java.util.List;
 
 public interface StageLearningEvaluationService {
 
+    StageLearningEvaluationVO generate(Long operatorId, boolean admin, Long studentId, String stage, LocalDate startDate, LocalDate endDate);
+
     StageLearningEvaluationVO myEvaluation(Long userId, String stage, LocalDate startDate, LocalDate endDate);
 
     List<StageLearningEvaluationVO> teacherEvaluations(
@@ -17,4 +19,6 @@ public interface StageLearningEvaluationService {
             LocalDate startDate,
             LocalDate endDate
     );
+
+    List<StageLearningEvaluationVO> history(Long requesterId, boolean admin, Long studentId, int limit);
 }

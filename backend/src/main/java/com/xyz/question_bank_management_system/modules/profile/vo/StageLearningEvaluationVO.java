@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class StageLearningEvaluationVO {
+    private Long evaluationId;
+    private Boolean generated;
     private Long studentId;
     private String studentName;
     private String stageKey;
@@ -28,6 +30,11 @@ public class StageLearningEvaluationVO {
     private List<Dimension> dimensions = new ArrayList<>();
     private List<WeakKnowledgePoint> weakKnowledgePoints = new ArrayList<>();
     private List<String> suggestions = new ArrayList<>();
+
+    public Long getEvaluationId() { return evaluationId; }
+    public void setEvaluationId(Long evaluationId) { this.evaluationId = evaluationId; }
+    public Boolean getGenerated() { return generated; }
+    public void setGenerated(Boolean generated) { this.generated = generated; }
 
     public Long getStudentId() { return studentId; }
     public void setStudentId(Long studentId) { this.studentId = studentId; }

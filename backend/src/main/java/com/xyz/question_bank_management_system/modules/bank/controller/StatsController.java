@@ -4,7 +4,7 @@ import com.xyz.question_bank_management_system.common.ApiResponse;
 import com.xyz.question_bank_management_system.common.PageResponse;
 import com.xyz.question_bank_management_system.modules.bank.entity.*;
 import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
-import com.xyz.question_bank_management_system.modules.profile.entity.QbUserAbility;
+import com.xyz.question_bank_management_system.modules.profile.vo.AbilityScoreVO;
 import com.xyz.question_bank_management_system.modules.bank.service.StatsService;
 import com.xyz.question_bank_management_system.util.SecurityContextUtil;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +47,7 @@ public class StatsController {
     }
 
     @GetMapping("/ability")
-    public ApiResponse<QbUserAbility> ability() {
+    public ApiResponse<AbilityScoreVO> ability() {
         Long uid = SecurityContextUtil.getUserId();
         return ApiResponse.ok(statsService.ability(uid));
     }
