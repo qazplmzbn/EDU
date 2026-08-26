@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS data_sync_record (
 
 CREATE TABLE IF NOT EXISTS qb_llm_call (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  biz_type TINYINT NOT NULL COMMENT '1=QUESTION_ANALYSIS,2=SUBJECTIVE_GRADING,3=OTHER',
+  biz_type VARCHAR(40) NOT NULL,
   biz_id BIGINT UNSIGNED NULL,
   model_name VARCHAR(128) NULL,
   prompt_text LONGTEXT NULL,
@@ -237,84 +237,66 @@ CREATE TABLE IF NOT EXISTS qb_llm_call (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   KEY idx_qb_llm_biz (biz_type, biz_id),
+  KEY idx_qb_llm_call_biz (biz_type, biz_id, created_at),
   KEY idx_qb_llm_time (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_llm_provider (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  provider_key VARCHAR(100) NOT NULL,
-  label VARCHAR(128) NOT NULL,
-  provider_type VARCHAR(32) NOT NULL DEFAULT 'API',
-  base_url VARCHAR(500) NOT NULL,
-  api_key_cipher TEXT NULL,
-  model VARCHAR(128) NOT NULL,
-  temperature DOUBLE NULL,
-  supports_temperature TINYINT NOT NULL DEFAULT 1,
-  description VARCHAR(1000) NULL,
-  tags_json TEXT NULL,
-  enabled TINYINT NOT NULL DEFAULT 1,
-  is_default TINYINT NOT NULL DEFAULT 0,
-  created_by BIGINT UNSIGNED NULL,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  is_deleted TINYINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  KEY idx_llm_provider_key (provider_key, is_deleted),
-  KEY idx_llm_provider_default (is_default, enabled, is_deleted)
+CREATE TABLE IF NOT EXISTS model_config (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, owner_type VARCHAR(24) NOT NULL DEFAULT 'system', owner_id BIGINT UNSIGNED NULL,
+  provider_key VARCHAR(100) NOT NULL, label VARCHAR(128) NOT NULL, provider_type VARCHAR(32) NOT NULL DEFAULT 'API', base_url VARCHAR(500) NOT NULL,
+  api_key_cipher TEXT NULL, model VARCHAR(128) NOT NULL, temperature DOUBLE NULL, enabled TINYINT NOT NULL DEFAULT 1, is_default TINYINT NOT NULL DEFAULT 0,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
+  UNIQUE KEY uk_model_config_owner_key(owner_type,owner_id,provider_key), KEY idx_model_config_owner_enabled(owner_type,owner_id,enabled,is_default)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_prompt_template (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  template_name VARCHAR(128) NOT NULL,
-  task_type VARCHAR(64) NOT NULL,
-  description VARCHAR(1000) NULL,
-  prompt_text LONGTEXT NOT NULL,
-  created_by BIGINT UNSIGNED NULL,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  is_deleted TINYINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  KEY idx_prompt_template_task (task_type, is_deleted)
+CREATE TABLE IF NOT EXISTS prompt_template (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, owner_type VARCHAR(24) NOT NULL DEFAULT 'system', owner_id BIGINT UNSIGNED NULL,
+  template_name VARCHAR(128) NOT NULL, task_type VARCHAR(64) NOT NULL, description VARCHAR(1000) NULL, prompt_text LONGTEXT NOT NULL, version VARCHAR(64) NOT NULL DEFAULT 'v1',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
+  UNIQUE KEY uk_prompt_template_owner_version(owner_type,owner_id,template_name,task_type,version), KEY idx_prompt_template_owner_task(owner_type,owner_id,task_type,updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_user_llm_provider (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id BIGINT UNSIGNED NOT NULL,
-  provider_key VARCHAR(100) NOT NULL,
-  label VARCHAR(128) NOT NULL,
-  provider_type VARCHAR(32) NOT NULL DEFAULT 'API',
-  base_url VARCHAR(500) NOT NULL,
-  api_key_cipher TEXT NULL,
-  model VARCHAR(128) NOT NULL,
-  temperature DOUBLE NULL,
-  supports_temperature TINYINT NOT NULL DEFAULT 1,
-  description VARCHAR(1000) NULL,
-  tags_json TEXT NULL,
-  enabled TINYINT NOT NULL DEFAULT 1,
-  is_default TINYINT NOT NULL DEFAULT 0,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  is_deleted TINYINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  KEY idx_user_llm_provider_user (user_id, is_deleted),
-  KEY idx_user_llm_provider_key (user_id, provider_key, is_deleted),
-  KEY idx_user_llm_provider_default (user_id, is_default, enabled, is_deleted)
+CREATE TABLE IF NOT EXISTS agent_definition (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, agent_code VARCHAR(64) NOT NULL, agent_name VARCHAR(128) NOT NULL, role_type VARCHAR(32) NOT NULL,
+  description VARCHAR(1000) NULL, default_model_config_id BIGINT UNSIGNED NULL, prompt_template_id BIGINT UNSIGNED NULL, config_json LONGTEXT NULL,
+  status TINYINT NOT NULL DEFAULT 1, version VARCHAR(64) NOT NULL DEFAULT 'v1', created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY(id), UNIQUE KEY uk_agent_definition_code_version(agent_code,version), KEY idx_agent_definition_enabled(agent_code,status,updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qb_user_prompt_template (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id BIGINT UNSIGNED NOT NULL,
-  template_name VARCHAR(128) NOT NULL,
-  task_type VARCHAR(64) NOT NULL,
-  description VARCHAR(1000) NULL,
-  prompt_text LONGTEXT NOT NULL,
-  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  is_deleted TINYINT NOT NULL DEFAULT 0,
-  PRIMARY KEY (id),
-  KEY idx_user_prompt_template_user (user_id, is_deleted),
-  KEY idx_user_prompt_template_task (user_id, task_type, is_deleted)
+CREATE TABLE IF NOT EXISTS agent_task (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, task_code VARCHAR(64) NULL, task_type VARCHAR(40) NOT NULL, user_id BIGINT UNSIGNED NULL, teacher_id BIGINT UNSIGNED NULL,
+  target_type VARCHAR(24) NULL, target_id BIGINT UNSIGNED NULL, input_json LONGTEXT NULL, status VARCHAR(24) NOT NULL DEFAULT 'queued', current_step_no INT NOT NULL DEFAULT 0,
+  result_summary LONGTEXT NULL, error_message VARCHAR(2000) NULL, started_at DATETIME(3) NULL, finished_at DATETIME(3) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY(id), UNIQUE KEY uk_agent_task_code(task_code), KEY idx_agent_task_status_created(status,created_at), KEY idx_agent_task_teacher_created(teacher_id,created_at), KEY idx_agent_task_user_created(user_id,created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_step (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, agent_task_id BIGINT UNSIGNED NOT NULL, step_no INT NOT NULL, agent_definition_id BIGINT UNSIGNED NULL, step_type VARCHAR(40) NOT NULL,
+  input_json LONGTEXT NULL, output_json LONGTEXT NULL, llm_call_id BIGINT UNSIGNED NULL, status VARCHAR(24) NOT NULL DEFAULT 'pending', latency_ms INT NULL,
+  started_at DATETIME(3) NULL, finished_at DATETIME(3) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
+  UNIQUE KEY uk_agent_step_task_no(agent_task_id,step_no), KEY idx_agent_step_call(llm_call_id), KEY idx_agent_step_status(status,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_review (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, agent_task_id BIGINT UNSIGNED NOT NULL, agent_step_id BIGINT UNSIGNED NULL, target_type VARCHAR(24) NOT NULL, target_id BIGINT UNSIGNED NULL,
+  factual_score DECIMAL(6,4) NULL, coverage_score DECIMAL(6,4) NULL, difficulty_match_score DECIMAL(6,4) NULL, hallucination_rate DECIMAL(6,4) NULL, source_consistency_score DECIMAL(6,4) NULL,
+  review_status VARCHAR(24) NOT NULL DEFAULT 'pending', review_report LONGTEXT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
+  KEY idx_agent_review_task(agent_task_id,created_at), KEY idx_agent_review_step(agent_step_id), KEY idx_agent_review_status(review_status,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS agent_decision (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, agent_task_id BIGINT UNSIGNED NOT NULL, agent_step_id BIGINT UNSIGNED NULL, decision_type VARCHAR(40) NOT NULL, target_type VARCHAR(24) NULL, target_id BIGINT UNSIGNED NULL,
+  decision_value VARCHAR(255) NULL, decision_reason LONGTEXT NULL, confidence DECIMAL(6,4) NULL, evidence_json LONGTEXT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
+  KEY idx_agent_decision_task(agent_task_id,created_at), KEY idx_agent_decision_step(agent_step_id), KEY idx_agent_decision_type(decision_type,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO agent_definition(agent_code,agent_name,role_type,description,status,version)
+VALUES ('PROFILE','画像智能体','profile','读取持久化画像摘要，不修改画像',1,'v1'),
+       ('DIAGNOSIS','诊断智能体','diagnosis','分析知识点、能力与行为证据',1,'v1'),
+       ('PLANNER','规划智能体','plan','形成资源与教学行动建议',1,'v1'),
+       ('GENERATOR','资源生成智能体','generate','生成结构化学习资源草案',1,'v1'),
+       ('REVIEWER','资源审核智能体','review','审核事实、覆盖、难度与一致性',1,'v1')
+ON DUPLICATE KEY UPDATE agent_name=VALUES(agent_name),role_type=VALUES(role_type),description=VALUES(description),status=VALUES(status),updated_at=NOW(3);
 
 CREATE TABLE IF NOT EXISTS qb_question (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

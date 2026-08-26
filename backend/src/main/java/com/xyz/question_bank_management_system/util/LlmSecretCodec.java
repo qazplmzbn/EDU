@@ -14,15 +14,24 @@ import java.util.Base64;
 
 @Component
 public class LlmSecretCodec {
-    private static final String PREFIX = "v1:";
+    private static final String PREFIX = "v2:";
+    private static final String LEGACY_PREFIX = "v1:";
     private static final int IV_BYTES = 12;
     private static final int TAG_BITS = 128;
 
     private final SecureRandom secureRandom = new SecureRandom();
-    private final SecretKeySpec keySpec;
+    private final String configuredKey;
+    private final String legacyJwtSecret;
 
-    public LlmSecretCodec(@Value("${app.jwt.secret:PLEASE_CHANGE_ME_TO_A_LONG_RANDOM_STRING}") String secret) {
-        this.keySpec = new SecretKeySpec(sha256(secret), "AES");
+    /**
+     * API keys must never be derived from the JWT signing secret.  The value is
+     * intentionally read from an environment-backed property so a deployment
+     * cannot silently use the development JWT default as an encryption key.
+     */
+    public LlmSecretCodec(@Value("${app.llm.encryption-key:${APP_LLM_ENCRYPTION_KEY:}}") String configuredKey,
+                          @Value("${app.jwt.secret:}") String legacyJwtSecret) {
+        this.configuredKey = configuredKey;
+        this.legacyJwtSecret = legacyJwtSecret;
     }
 
     public String encode(String plainText) {
@@ -33,7 +42,7 @@ public class LlmSecretCodec {
             byte[] iv = new byte[IV_BYTES];
             secureRandom.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, new GCMParameterSpec(TAG_BITS, iv));
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec(), new GCMParameterSpec(TAG_BITS, iv));
             byte[] encrypted = cipher.doFinal(plainText.trim().getBytes(StandardCharsets.UTF_8));
             return PREFIX + Base64.getEncoder().encodeToString(iv) + ":" + Base64.getEncoder().encodeToString(encrypted);
         } catch (Exception ex) {
@@ -46,18 +55,22 @@ public class LlmSecretCodec {
             return "";
         }
         String value = cipherText.trim();
-        if (!value.startsWith(PREFIX)) {
+        if (!value.startsWith(PREFIX) && !value.startsWith(LEGACY_PREFIX)) {
             return value;
         }
+        if (!isConfigured()) {
+            throw new IllegalStateException("APP_LLM_ENCRYPTION_KEY must be configured before encrypted model keys can be used");
+        }
         try {
-            String[] parts = value.substring(PREFIX.length()).split(":", 2);
+            boolean legacy = value.startsWith(LEGACY_PREFIX);
+            String[] parts = value.substring(legacy ? LEGACY_PREFIX.length() : PREFIX.length()).split(":", 2);
             if (parts.length != 2) {
                 return "";
             }
             byte[] iv = Base64.getDecoder().decode(parts[0]);
             byte[] encrypted = Base64.getDecoder().decode(parts[1]);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(TAG_BITS, iv));
+            cipher.init(Cipher.DECRYPT_MODE, legacy ? legacyKeySpec() : keySpec(), new GCMParameterSpec(TAG_BITS, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
         } catch (Exception ex) {
             return "";
@@ -65,6 +78,9 @@ public class LlmSecretCodec {
     }
 
     public String mask(String cipherText) {
+        if (StringUtils.hasText(cipherText) && !isConfigured()) {
+            return "configured";
+        }
         String secret = decode(cipherText);
         if (!StringUtils.hasText(secret)) {
             return "";
@@ -76,11 +92,32 @@ public class LlmSecretCodec {
         return trimmed.substring(0, 4) + "****" + trimmed.substring(trimmed.length() - 4);
     }
 
-    private byte[] sha256(String value) {
+    public boolean isConfigured() {
         try {
-            return MessageDigest.getInstance("SHA-256").digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
+            Base64.getDecoder().decode(String.valueOf(configuredKey).trim());
+            return StringUtils.hasText(configuredKey)
+                    && Base64.getDecoder().decode(configuredKey.trim()).length == 32;
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    private SecretKeySpec keySpec() {
+        if (!isConfigured()) {
+            throw new IllegalStateException("APP_LLM_ENCRYPTION_KEY must be a Base64 encoded 32-byte key");
+        }
+        return new SecretKeySpec(Base64.getDecoder().decode(configuredKey.trim()), "AES");
+    }
+
+    private SecretKeySpec legacyKeySpec() {
+        if (!StringUtils.hasText(legacyJwtSecret)) {
+            throw new IllegalStateException("Legacy LLM secret cannot be decrypted without the previous JWT secret");
+        }
+        try {
+            byte[] key = MessageDigest.getInstance("SHA-256").digest(legacyJwtSecret.getBytes(StandardCharsets.UTF_8));
+            return new SecretKeySpec(key, "AES");
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to initialize LLM secret codec", ex);
+            throw new IllegalStateException("Failed to load legacy LLM secret", ex);
         }
     }
 }

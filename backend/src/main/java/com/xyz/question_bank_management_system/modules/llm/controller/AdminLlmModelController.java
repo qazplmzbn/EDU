@@ -5,6 +5,7 @@ import com.xyz.question_bank_management_system.modules.llm.dto.StudentLlmProvide
 import com.xyz.question_bank_management_system.modules.llm.dto.StudentLlmProviderRequest;
 import com.xyz.question_bank_management_system.modules.llm.dto.StudentPromptTemplateRequest;
 import com.xyz.question_bank_management_system.modules.llm.service.AdminLlmModelService;
+import com.xyz.question_bank_management_system.modules.llm.service.ModelKeyRotationService;
 import com.xyz.question_bank_management_system.util.SecurityContextUtil;
 import com.xyz.question_bank_management_system.modules.llm.vo.StudentLlmProviderVO;
 import com.xyz.question_bank_management_system.modules.llm.vo.StudentPromptTemplateVO;
@@ -22,6 +23,12 @@ import java.util.List;
 public class AdminLlmModelController {
 
     private final AdminLlmModelService adminLlmModelService;
+    private final ModelKeyRotationService modelKeyRotationService;
+
+    @PostMapping("/providers/reencrypt-legacy-keys")
+    public ApiResponse<Integer> reencryptLegacyKeys() {
+        return ApiResponse.ok(modelKeyRotationService.reencryptLegacyKeys());
+    }
 
     @GetMapping("/providers")
     public ApiResponse<List<StudentLlmProviderVO>> providers(@RequestParam(required = false) String keyword,

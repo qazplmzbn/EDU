@@ -13,10 +13,16 @@ import com.xyz.question_bank_management_system.modules.learning.mapper.ResourceK
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
 import com.xyz.question_bank_management_system.modules.profile.service.StageLearningEvaluationService;
 import com.xyz.question_bank_management_system.modules.agent.service.TeacherAgentResourceService;
+import com.xyz.question_bank_management_system.modules.agent.service.AgentTaskPersistenceService;
+import com.xyz.question_bank_management_system.modules.agent.entity.AgentTask;
 import com.xyz.question_bank_management_system.modules.profile.vo.StageLearningEvaluationVO;
 import com.xyz.question_bank_management_system.modules.agent.vo.TeacherAgentResourceGenerateVO;
 import com.xyz.question_bank_management_system.modules.agent.vo.TeacherAgentResourceTaskVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -89,6 +95,9 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
     private final QbLearningResourceMapper learningResourceMapper;
     private final ResourceKnowledgeMapper resourceKnowledgeMapper;
     private final ObjectMapper objectMapper;
+    private final AgentTaskPersistenceService agentTaskPersistenceService;
+    @Qualifier("agentTaskExecutor")
+    private final TaskExecutor agentTaskExecutor;
     private final Map<String, TaskState> taskStore = new ConcurrentHashMap<>();
 
     @Override
@@ -97,11 +106,19 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
             throw BizException.of(ErrorCode.PARAM_ERROR, "学生 ID 不能为空");
         }
 
+        AgentTask task = agentTaskPersistenceService.createResourceTask(teacherId, request.getStudentId(), admin, request);
         try {
-            return doGenerate(teacherId, admin, request);
+            agentTaskPersistenceService.markRunning(task.getId());
+            TaskState taskState = new TaskState();
+            taskState.persistenceId = task.getId();
+            TeacherAgentResourceGenerateVO result = doGenerate(teacherId, admin, request, taskState);
+            agentTaskPersistenceService.complete(task, result);
+            return result;
         } catch (BizException ex) {
+            agentTaskPersistenceService.fail(task.getId(), ex.getMessage());
             throw ex;
         } catch (Exception ex) {
+            agentTaskPersistenceService.fail(task.getId(), safeErrorMessage(ex));
             throw BizException.of(ErrorCode.LLM_ERROR, "教师端智能体资源生成失败：" + safeErrorMessage(ex));
         }
     }
@@ -142,9 +159,11 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         if (request == null || request.getStudentId() == null) {
             throw BizException.of(ErrorCode.PARAM_ERROR, "学生 ID 不能为空");
         }
-        String taskId = "teacher-agent-task-" + UUID.randomUUID();
+        AgentTask persisted = agentTaskPersistenceService.createResourceTask(teacherId, request.getStudentId(), admin, request);
+        String taskId = persisted.getTaskCode();
         TaskState task = new TaskState();
         task.taskId = taskId;
+        task.persistenceId = persisted.getId();
         task.teacherId = teacherId;
         task.admin = admin;
         task.studentId = request.getStudentId();
@@ -154,20 +173,32 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         task.updatedAt = task.startedAt;
         taskStore.put(taskId, task);
 
-        task.future = CompletableFuture.runAsync(() -> runTask(taskId, teacherId, admin, request));
+        try {
+            agentTaskExecutor.execute(() -> runTask(taskId, teacherId, admin, request));
+        } catch (RuntimeException ex) {
+            task.status = "failed";
+            task.message = "任务执行队列不可用：" + safeErrorMessage(ex);
+            task.finishedAt = LocalDateTime.now();
+            agentTaskPersistenceService.fail(task.persistenceId, task.message);
+        }
         return toTaskVO(task);
     }
 
     @Override
     public TeacherAgentResourceTaskVO getTaskStatus(Long teacherId, boolean admin, String taskId) {
         TaskState task = taskStore.get(taskId);
-        assertTaskReadable(task, teacherId, admin);
-        return toTaskVO(task);
+        AgentTask persisted = agentTaskPersistenceService.requireReadable(taskId, teacherId, admin);
+        return task == null ? toTaskVO(persisted) : toTaskVO(task);
     }
 
     @Override
     public TeacherAgentResourceTaskVO cancelTask(Long teacherId, boolean admin, String taskId) {
         TaskState task = taskStore.get(taskId);
+        AgentTask persisted = agentTaskPersistenceService.requireReadable(taskId, teacherId, admin);
+        if (task == null) {
+            if (!isTerminal(persisted.getStatus())) agentTaskPersistenceService.cancel(persisted.getId());
+            return toTaskVO(agentTaskPersistenceService.requireReadable(taskId, teacherId, admin));
+        }
         assertTaskReadable(task, teacherId, admin);
         if (isTerminal(task.status)) {
             return toTaskVO(task);
@@ -177,6 +208,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         task.message = "任务已手动停止。当前已生成内容会保留，未完成调用不再继续写入结果。";
         task.finishedAt = LocalDateTime.now();
         task.updatedAt = task.finishedAt;
+        agentTaskPersistenceService.cancel(task.persistenceId);
         if (task.future != null) {
             task.future.cancel(true);
         }
@@ -189,6 +221,9 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
 
     private TeacherAgentResourceGenerateVO doGenerate(Long teacherId, boolean admin, TeacherAgentResourceGenerateRequest request, TaskState task) {
         StageLearningEvaluationVO profile = loadProfile(teacherId, admin, request);
+        if (task != null && task.persistenceId != null) {
+            agentTaskPersistenceService.attachProfileSnapshot(task.persistenceId, profile);
+        }
         List<String> resourceTypes = normalizeResourceTypes(request.getResourceTypes());
         String defaultProviderKey = normalizeProviderKey(request.getProviderKey());
         Map<String, String> agentProviderKeys = normalizeAgentProviderKeys(request.getAgentProviderKeys());
@@ -276,6 +311,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         task.status = "running";
         task.message = "智能体正在生成资源并执行审核，请稍后查看。";
         task.updatedAt = LocalDateTime.now();
+        agentTaskPersistenceService.markRunning(task.persistenceId);
         try {
             TeacherAgentResourceGenerateVO result = doGenerate(teacherId, admin, request, task);
             if (task.canceled) {
@@ -287,11 +323,13 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
             task.runId = result.getRunId();
             task.finishedAt = LocalDateTime.now();
             task.updatedAt = task.finishedAt;
+            agentTaskPersistenceService.complete(agentTaskPersistenceService.requireReadable(taskId, teacherId, true), result);
         } catch (CancellationException ex) {
             task.status = "canceled";
             task.message = "任务已手动停止。";
             task.finishedAt = LocalDateTime.now();
             task.updatedAt = task.finishedAt;
+            agentTaskPersistenceService.cancel(task.persistenceId);
         } catch (BizException ex) {
             if (task.canceled) {
                 return;
@@ -300,6 +338,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
             task.message = ex.getMessage();
             task.finishedAt = LocalDateTime.now();
             task.updatedAt = task.finishedAt;
+            agentTaskPersistenceService.fail(task.persistenceId, task.message);
         } catch (Exception ex) {
             if (task.canceled) {
                 return;
@@ -308,6 +347,33 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
             task.message = "教师端智能体资源生成失败：" + safeErrorMessage(ex);
             task.finishedAt = LocalDateTime.now();
             task.updatedAt = task.finishedAt;
+            agentTaskPersistenceService.fail(task.persistenceId, task.message);
+        }
+    }
+
+    /** Restore durable queued/running work after a process restart; schema absence must not block startup. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverPersistedTasks() {
+        try {
+            agentTaskPersistenceService.requeueInterruptedTasks();
+            for (AgentTask persisted : agentTaskPersistenceService.recoverableTasks()) {
+                if (taskStore.containsKey(persisted.getTaskCode())) continue;
+                TeacherAgentResourceGenerateRequest request = agentTaskPersistenceService.requestOf(persisted);
+                TaskState task = new TaskState();
+                task.taskId = persisted.getTaskCode();
+                task.persistenceId = persisted.getId();
+                task.teacherId = persisted.getTeacherId();
+                task.studentId = persisted.getUserId();
+                task.admin = agentTaskPersistenceService.adminOf(persisted);
+                task.status = "queued";
+                task.message = "检测到重启前未完成任务，正在恢复。";
+                task.startedAt = LocalDateTime.now();
+                task.updatedAt = task.startedAt;
+                taskStore.put(task.taskId, task);
+                agentTaskExecutor.execute(() -> runTask(task.taskId, task.teacherId, task.admin, request));
+            }
+        } catch (Exception ignored) {
+            // Stage 06 schema is manually applied; an old database must still be able to start for migration work.
         }
     }
 
@@ -2298,6 +2364,24 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
         return vo;
     }
 
+    private TeacherAgentResourceTaskVO toTaskVO(AgentTask task) {
+        TeacherAgentResourceTaskVO vo = new TeacherAgentResourceTaskVO();
+        vo.setTaskId(task.getTaskCode());
+        vo.setStatus(task.getStatus());
+        vo.setMessage(task.getErrorMessage() == null ? task.getResultSummary() : task.getErrorMessage());
+        vo.setTeacherId(task.getTeacherId());
+        vo.setStudentId(task.getUserId());
+        vo.setStartedAt(format(task.getStartedAt()));
+        vo.setFinishedAt(format(task.getFinishedAt()));
+        try {
+            if (StringUtils.hasText(task.getResultSummary()) && task.getResultSummary().startsWith("{")) {
+                vo.setResult(objectMapper.readValue(task.getResultSummary(), TeacherAgentResourceGenerateVO.class));
+            }
+        } catch (Exception ignored) {
+        }
+        return vo;
+    }
+
     private String format(LocalDateTime value) {
         return value == null ? null : value.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
@@ -2324,6 +2408,7 @@ public class TeacherAgentResourceServiceImpl implements TeacherAgentResourceServ
 
     private static class TaskState {
         private String taskId;
+        private Long persistenceId;
         private String status;
         private String message;
         private Long teacherId;
