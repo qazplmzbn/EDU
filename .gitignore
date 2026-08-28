@@ -71,9 +71,6 @@ tmp/
 # Local PDF documents
 /*.pdf
 
-# Runtime logs
-*.log
-
 # Local reference materials and database baseline exports
 /资料/
 /阶段计划/

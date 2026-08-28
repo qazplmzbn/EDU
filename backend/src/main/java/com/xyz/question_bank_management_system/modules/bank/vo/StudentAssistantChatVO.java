@@ -5,6 +5,7 @@ import lombok.Data;
 @Data
 public class StudentAssistantChatVO {
     private String reply;
+    private Long sessionId;
     private Long llmCallId;
     private Boolean contextUsed;
     private String lockedReason;

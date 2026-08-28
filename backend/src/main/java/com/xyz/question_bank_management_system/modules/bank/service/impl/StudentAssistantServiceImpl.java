@@ -9,6 +9,9 @@ import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptMapper;
 import com.xyz.question_bank_management_system.modules.bank.mapper.QbAttemptQuestionMapper;
 import com.xyz.question_bank_management_system.modules.llm.service.LlmService;
+import com.xyz.question_bank_management_system.modules.dialogue.entity.DialogueMessage;
+import com.xyz.question_bank_management_system.modules.dialogue.entity.DialogueSession;
+import com.xyz.question_bank_management_system.modules.dialogue.mapper.DialogueMapper;
 import com.xyz.question_bank_management_system.modules.bank.service.StudentAssistantService;
 import com.xyz.question_bank_management_system.modules.bank.vo.StudentAssistantChatVO;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +35,7 @@ public class StudentAssistantServiceImpl implements StudentAssistantService {
     private final QbAttemptMapper attemptMapper;
     private final QbAttemptQuestionMapper attemptQuestionMapper;
     private final LlmService llmService;
+    private final DialogueMapper dialogueMapper;
 
     @Override
     public StudentAssistantChatVO chat(Long userId, StudentAssistantChatRequest request) {
@@ -40,6 +44,8 @@ public class StudentAssistantServiceImpl implements StudentAssistantService {
             throw BizException.of(ErrorCode.PARAM_ERROR, "消息不能为空");
         }
 
+        DialogueSession session = resolveSession(userId, request);
+        DialogueMessage userMessage = new DialogueMessage(); userMessage.setSessionId(session.getId()); userMessage.setUserId(userId); userMessage.setRole("user"); userMessage.setContent(message); userMessage.setProfileExtracted(0); dialogueMapper.insertMessage(userMessage);
         Map<String, Object> pageContext = request.getPageContext();
         Long attemptId = readLong(pageContext, "attemptId");
         Long attemptQuestionId = readLong(pageContext, "attemptQuestionId");
@@ -63,10 +69,16 @@ public class StudentAssistantServiceImpl implements StudentAssistantService {
         StudentAssistantChatVO vo = new StudentAssistantChatVO();
         vo.setReply(StringUtils.hasText(content) ? content : "小C暂时没有生成回复，请稍后再试。");
         vo.setLlmCallId(call.getId());
+        DialogueMessage assistantMessage = new DialogueMessage(); assistantMessage.setSessionId(session.getId()); assistantMessage.setRole("assistant"); assistantMessage.setContent(vo.getReply()); assistantMessage.setReplyToMessageId(userMessage.getId()); assistantMessage.setLlmCallId(call.getId()); assistantMessage.setProfileExtracted(0); dialogueMapper.insertMessage(assistantMessage); dialogueMapper.touch(session.getId());
+        vo.setSessionId(session.getId());
         vo.setContextUsed(pageContext != null && !pageContext.isEmpty());
         vo.setLockedReason(null);
         return vo;
     }
+
+    @Override public List<DialogueSession> sessions(Long userId) { return dialogueMapper.sessions(userId); }
+    @Override public List<DialogueMessage> messages(Long sessionId, Long userId) { if (dialogueMapper.ownedSession(sessionId,userId)==null) throw BizException.of(ErrorCode.NOT_FOUND,"对话会话不存在"); return dialogueMapper.messages(sessionId); }
+    private DialogueSession resolveSession(Long userId, StudentAssistantChatRequest request) { if (request.getSessionId()!=null) { DialogueSession existing=dialogueMapper.ownedSession(request.getSessionId(),userId); if(existing==null||!"active".equals(existing.getStatus())) throw BizException.of(ErrorCode.FORBIDDEN,"对话会话不可用"); return existing; } DialogueSession created=new DialogueSession(); created.setUserId(userId); created.setTitle(trim(request.getMessage(),80)); created.setSessionType("tutor"); created.setStatus("active"); dialogueMapper.insertSession(created); return created; }
 
     private QbAttempt validateAttempt(Long userId, Long attemptId) {
         if (attemptId == null) {

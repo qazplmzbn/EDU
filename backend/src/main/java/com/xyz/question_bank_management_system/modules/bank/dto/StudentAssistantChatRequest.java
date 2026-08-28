@@ -10,6 +10,7 @@ import java.util.Map;
 public class StudentAssistantChatRequest {
     @NotBlank(message = "消息不能为空")
     private String message;
+    private Long sessionId;
     private List<ChatMessage> history;
     private Map<String, Object> pageContext;
     private String providerKey;

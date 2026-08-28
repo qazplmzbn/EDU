@@ -23,7 +23,7 @@ public interface QbLearningResourceTargetMapper {
     int batchInsert(@Param("targets") List<QbLearningResourceTarget> targets);
 
     @Select({
-            "SELECT DISTINCT r.*",
+            "SELECT r.*",
             "FROM qb_learning_resource_target rt",
             "JOIN qb_learning_resource r ON r.id = rt.resource_id AND r.is_deleted = 0",
             "WHERE rt.student_id = #{studentId}",

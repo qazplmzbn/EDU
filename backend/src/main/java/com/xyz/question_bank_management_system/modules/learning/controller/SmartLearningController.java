@@ -1,6 +1,8 @@
 package com.xyz.question_bank_management_system.modules.learning.controller;
 
 import com.xyz.question_bank_management_system.common.ApiResponse;
+import com.xyz.question_bank_management_system.exception.BizException;
+import com.xyz.question_bank_management_system.exception.ErrorCode;
 import com.xyz.question_bank_management_system.modules.knowledge.dto.KnowledgeGraphExtractionRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceRecommendRequest;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceUpsertRequest;
@@ -107,7 +109,7 @@ public class SmartLearningController {
     @PostMapping("/path-recommendation/snapshots")
     @PreAuthorize("hasRole('STUDENT')")
     public ApiResponse<SmartLearningVO.LearningPathSnapshotSaved> savePathSnapshot(@RequestBody(required = false) LearningPathSnapshotSaveRequest request) {
-        return ApiResponse.ok(smartLearningService.savePathSnapshot(SecurityContextUtil.getUserId(), request));
+        throw BizException.of(ErrorCode.CONFLICT, "旧学习路径快照已进入只读兼容模式，请使用课程正式学习路径接口");
     }
 
     @GetMapping("/path-recommendation/snapshots/{id}")
