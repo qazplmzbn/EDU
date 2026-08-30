@@ -12,6 +12,7 @@ import com.xyz.question_bank_management_system.modules.course.mapper.CourseKnowl
 import com.xyz.question_bank_management_system.modules.course.mapper.CourseMapper;
 import com.xyz.question_bank_management_system.modules.course.mapper.StudentCourseProgressMapper;
 import com.xyz.question_bank_management_system.modules.course.service.CourseLearningPathService;
+import com.xyz.question_bank_management_system.modules.course.service.PathRefreshApplicationService;
 import com.xyz.question_bank_management_system.modules.course.vo.CourseProgressVO;
 import com.xyz.question_bank_management_system.modules.course.vo.CourseStudentProgressVO;
 import com.xyz.question_bank_management_system.modules.course.vo.LearningPathDetailVO;
@@ -23,6 +24,7 @@ import com.xyz.question_bank_management_system.modules.learning.entity.QbLearnin
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
 import com.xyz.question_bank_management_system.modules.learning.mapper.LearningPathItemMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.LearningPathMapper;
+import com.xyz.question_bank_management_system.modules.learning.mapper.LearningPathV1Mapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningBehaviorMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
@@ -67,6 +69,8 @@ public class CourseLearningPathServiceImpl implements CourseLearningPathService 
     private final QbClassMemberMapper classMemberMapper;
     private final SysUserMapper userMapper;
     private final SysRoleMapper roleMapper;
+    private final PathRefreshApplicationService pathRefreshApplicationService;
+    private final LearningPathV1Mapper learningPathV1Mapper;
 
     @Override
     @Transactional
@@ -169,36 +173,15 @@ public class CourseLearningPathServiceImpl implements CourseLearningPathService 
     @Override
     @Transactional
     public Long generateCoursePath(Long courseId, CoursePathGenerateRequest request, Long studentId) {
-        Course course = loadVisibleCourse(courseId, studentId);
-        Course lockedCourse = courseMapper.selectByIdForUpdate(courseId);
-        if (lockedCourse == null || !"active".equals(lockedCourse.getStatus())) {
-            throw BizException.of(ErrorCode.CONFLICT, "课程当前不可用于生成学习路径");
-        }
-        course = lockedCourse;
+        loadVisibleCourse(courseId, studentId);
         List<CourseKnowledge> courseKnowledge = courseKnowledgeMapper.selectByCourseId(courseId);
         if (courseKnowledge.isEmpty()) {
             throw BizException.of(ErrorCode.CONFLICT, "课程尚未配置知识点，不能生成学习路径");
         }
-        LearningPath active = learningPathMapper.selectActiveByUserAndCourse(studentId, courseId);
-        long version = active == null || active.getVersion() == null ? 1L : active.getVersion() + 1L;
-        learningPathMapper.obsoleteActiveByUserAndCourse(studentId, courseId);
-
-        LearningPath path = new LearningPath();
-        path.setUserId(studentId);
-        path.setCourseId(courseId);
-        path.setTitle(course.getCourseName() + " 学习路径");
-        path.setStage(trimToNull(request == null ? null : request.getStage()));
-        path.setPlanningDays(normalizePlanningDays(request == null ? null : request.getPlanningDays()));
-        path.setVersion(version);
-        path.setStatus("active");
-        path.setSummaryText("基于课程知识点顺序生成；完成知识点节点后更新课程进度。");
-        List<StudentProfileSnapshot> snapshots = profileSnapshotMapper.selectRecent(studentId, 1);
-        if (!snapshots.isEmpty()) {
-            path.setProfileSnapshotId(snapshots.get(0).getId());
-        }
-        learningPathMapper.insert(path);
-        learningPathItemMapper.batchInsert(buildPathItems(path, courseKnowledge, studentId));
-        refreshProgress(path, LocalDateTime.now());
+        Long target = courseKnowledge.stream().max(java.util.Comparator.comparing(CourseKnowledge::getSequenceNo)).orElseThrow().getKnowledgePointId();
+        Map<String,Object> created = pathRefreshApplicationService.create(studentId, courseId, target,
+                "legacy-course-path-" + courseId + "-" + java.util.UUID.randomUUID());
+        LearningPath path = learningPathV1Mapper.selectByCode(String.valueOf(created.get("pathCode")));
         return path.getId();
     }
 

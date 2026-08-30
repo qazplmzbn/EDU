@@ -6,11 +6,13 @@ import com.xyz.question_bank_management_system.modules.course.entity.CourseKnowl
 import com.xyz.question_bank_management_system.modules.course.mapper.CourseKnowledgeMapper;
 import com.xyz.question_bank_management_system.modules.course.mapper.CourseMapper;
 import com.xyz.question_bank_management_system.modules.course.mapper.StudentCourseProgressMapper;
+import com.xyz.question_bank_management_system.modules.course.service.PathRefreshApplicationService;
 import com.xyz.question_bank_management_system.modules.learning.entity.LearningPath;
 import com.xyz.question_bank_management_system.modules.learning.entity.LearningPathItem;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
 import com.xyz.question_bank_management_system.modules.learning.mapper.LearningPathItemMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.LearningPathMapper;
+import com.xyz.question_bank_management_system.modules.learning.mapper.LearningPathV1Mapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningBehaviorMapper;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.entity.QbKnowledgePoint;
@@ -51,48 +53,34 @@ class CourseLearningPathServiceImplTest {
     @Mock private QbClassMemberMapper classMemberMapper;
     @Mock private SysUserMapper userMapper;
     @Mock private SysRoleMapper roleMapper;
+    @Mock private PathRefreshApplicationService pathRefreshApplicationService;
+    @Mock private LearningPathV1Mapper learningPathV1Mapper;
 
     private CourseLearningPathServiceImpl service() {
         return new CourseLearningPathServiceImpl(courseMapper, courseKnowledgeMapper, progressMapper, learningPathMapper,
                 itemMapper, knowledgePointMapper, resourceMapper, behaviorMapper, knowledgeStateMapper,
-                profileSnapshotMapper, classMemberMapper, userMapper, roleMapper);
+                profileSnapshotMapper, classMemberMapper, userMapper, roleMapper,
+                pathRefreshApplicationService, learningPathV1Mapper);
     }
 
     @Test
-    void generateCoursePath_obsoletesCurrentPathAndCreatesOrderedItems() {
+    void generateCoursePath_delegatesToVersionedKnowledgePathService() {
         Course course = new Course(); course.setId(11L); course.setCourseName("C language"); course.setStatus("active");
         CourseKnowledge first = relation(11L, 101L, 1); CourseKnowledge second = relation(11L, 102L, 2);
-        LearningPath previous = new LearningPath(); previous.setVersion(2L);
         CoursePathGenerateRequest request = new CoursePathGenerateRequest(); request.setPlanningDays(20);
 
         when(courseMapper.listVisibleForStudent(1001L)).thenReturn(List.of(course));
-        when(courseMapper.selectByIdForUpdate(11L)).thenReturn(course);
         when(courseKnowledgeMapper.selectByCourseId(11L)).thenReturn(List.of(first, second));
-        when(learningPathMapper.selectActiveByUserAndCourse(1001L, 11L)).thenReturn(previous);
-        when(profileSnapshotMapper.selectRecent(1001L, 1)).thenReturn(List.of());
-        when(knowledgeStateMapper.selectByUserId(1001L)).thenReturn(List.of());
-        when(knowledgePointMapper.selectById(101L)).thenReturn(point(101L));
-        when(knowledgePointMapper.selectById(102L)).thenReturn(point(102L));
-        when(resourceMapper.selectList(null, 101L, 1)).thenReturn(List.of());
-        when(resourceMapper.selectList(null, 102L, 1)).thenReturn(List.of());
-        when(courseKnowledgeMapper.countByCourseId(11L)).thenReturn(2);
-        when(itemMapper.countCompletedCourseKnowledge(anyLong(), anyLong())).thenReturn(0);
-        doAnswer(invocation -> { ((LearningPath) invocation.getArgument(0)).setId(88L); return 1; }).when(learningPathMapper).insert(any());
+        when(pathRefreshApplicationService.create(eq(1001L),eq(11L),eq(102L),anyString())).thenReturn(java.util.Map.of("pathCode","path_v1"));
+        LearningPath created = new LearningPath(); created.setId(88L);
+        when(learningPathV1Mapper.selectByCode("path_v1")).thenReturn(created);
 
         Long pathId = service().generateCoursePath(11L, request, 1001L);
 
         assertEquals(88L, pathId);
-        ArgumentCaptor<LearningPath> pathCaptor = ArgumentCaptor.forClass(LearningPath.class);
-        verify(learningPathMapper).insert(pathCaptor.capture());
-        assertEquals(3L, pathCaptor.getValue().getVersion());
-        assertEquals("active", pathCaptor.getValue().getStatus());
-        ArgumentCaptor<List<LearningPathItem>> itemCaptor = ArgumentCaptor.forClass(List.class);
-        verify(itemMapper).batchInsert(itemCaptor.capture());
-        assertEquals(2, itemCaptor.getValue().size());
-        assertEquals(1, itemCaptor.getValue().get(0).getOrderNo());
-        assertEquals(2, itemCaptor.getValue().get(1).getOrderNo());
-        verify(learningPathMapper).obsoleteActiveByUserAndCourse(1001L, 11L);
-        verify(progressMapper).upsert(any());
+        verify(pathRefreshApplicationService).create(eq(1001L),eq(11L),eq(102L),anyString());
+        verify(learningPathMapper,never()).insert(any());
+        verify(itemMapper,never()).batchInsert(any());
     }
 
     @Test

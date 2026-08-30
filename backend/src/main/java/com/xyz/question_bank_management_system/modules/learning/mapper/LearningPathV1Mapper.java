@@ -1,0 +1,22 @@
+package com.xyz.question_bank_management_system.modules.learning.mapper;
+import com.xyz.question_bank_management_system.modules.learning.entity.*;
+import org.apache.ibatis.annotations.*;
+import java.util.List;
+@Mapper public interface LearningPathV1Mapper {
+ @Insert("INSERT INTO learning_path(path_code,user_id,course_id,target_knowledge_point_id,status,current_version,idempotency_key,title,created_at,updated_at,is_deleted) VALUES(#{pathCode},#{userId},#{courseId},#{targetKnowledgePointId},#{status},#{currentVersion},#{idempotencyKey},#{title},NOW(3),NOW(3),0)") @Options(useGeneratedKeys=true,keyProperty="id") int insertPath(LearningPath p);
+ @Select("SELECT * FROM learning_path WHERE user_id=#{userId} AND idempotency_key=#{key} AND is_deleted=0 LIMIT 1") LearningPath selectByIdempotency(@Param("userId")Long userId,@Param("key")String key);
+ @Select("SELECT * FROM learning_path WHERE path_code=#{code} AND is_deleted=0 LIMIT 1") LearningPath selectByCode(String code);
+ @Select("SELECT * FROM learning_path WHERE id=#{id} AND is_deleted=0") LearningPath selectPathById(Long id);
+ @Select("SELECT * FROM learning_path WHERE path_code=#{code} AND is_deleted=0 LIMIT 1 FOR UPDATE") LearningPath selectByCodeForUpdate(String code);
+ @Update("UPDATE learning_path SET current_version=#{version},updated_at=NOW(3) WHERE id=#{pathId}") int updateCurrentVersion(@Param("pathId")Long pathId,@Param("version")Long version);
+ @Insert("INSERT INTO learning_path_version(path_id,version,path_mode,based_on_profile_version,graph_version,policy_version,model_version,status,change_reason,correlation_id,created_at) VALUES(#{pathId},#{version},#{pathMode},#{basedOnProfileVersion},#{graphVersion},#{policyVersion},#{modelVersion},#{status},#{changeReason},#{correlationId},NOW(3))") @Options(useGeneratedKeys=true,keyProperty="id") int insertVersion(LearningPathVersion v);
+ @Select("SELECT * FROM learning_path_version WHERE path_id=#{pathId} AND status='ACTIVE' ORDER BY version DESC LIMIT 1 FOR UPDATE") LearningPathVersion selectActiveVersionForUpdate(Long pathId);
+ @Select("SELECT * FROM learning_path_version WHERE path_id=#{pathId} AND status='ACTIVE' ORDER BY version DESC LIMIT 1") LearningPathVersion selectActiveVersion(Long pathId);
+ @Update("UPDATE learning_path_version SET status='SUPERSEDED' WHERE id=#{id} AND status='ACTIVE'") int supersede(Long id);
+ @Insert({"<script>","INSERT INTO learning_path_item(path_id,path_version_id,path_step_code,order_no,item_type,knowledge_point_id,stage,status,reason_code,decision_reason,mastery_before,confidence_before,created_at) VALUES","<foreach collection='rows' item='r' separator=','>","(#{r.pathId},#{r.pathVersionId},#{r.pathStepCode},#{r.orderNo},'knowledge',#{r.knowledgePointId},#{r.stage},#{r.status},#{r.reasonCode},#{r.decisionReason},#{r.masteryBefore},#{r.confidenceBefore},NOW(3))","</foreach>","</script>"}) int batchInsertSteps(@Param("rows")List<LearningPathItem> rows);
+ @Select("SELECT * FROM learning_path_item WHERE path_version_id=#{versionId} ORDER BY order_no,id") List<LearningPathItem> selectSteps(Long versionId);
+ @Insert("INSERT INTO learning_path_progress(path_id,last_processed_interaction_seq,consecutive_wrong_count,window_attempt_count,updated_at) VALUES(#{pathId},0,0,0,NOW(3))") int insertProgress(Long pathId);
+ @Select("SELECT * FROM learning_path_progress WHERE path_id=#{pathId} FOR UPDATE") LearningPathProgress selectProgressForUpdate(Long pathId);
+ @Update("UPDATE learning_path_progress SET last_processed_interaction_seq=#{seq},last_processed_interaction_id=#{interactionId},consecutive_wrong_count=CASE WHEN #{correct}=1 THEN 0 ELSE consecutive_wrong_count+1 END,window_attempt_count=window_attempt_count+1,updated_at=NOW(3) WHERE path_id=#{pathId}") int advanceProgress(@Param("pathId")Long pathId,@Param("seq")Long seq,@Param("interactionId")Long interactionId,@Param("correct")int correct);
+ @Insert("INSERT INTO path_update_log(path_id,old_version,new_version,trigger_event_types_json,trigger_interaction_ids_json,affected_knowledge_point_ids_json,added_step_ids_json,removed_step_ids_json,retained_step_ids_json,correlation_id,created_at) VALUES(#{pathId},#{oldVersion},#{newVersion},#{triggerEventTypesJson},#{triggerInteractionIdsJson},#{affectedKnowledgePointIdsJson},#{addedStepIdsJson},#{removedStepIdsJson},#{retainedStepIdsJson},#{correlationId},NOW(3))") int insertUpdateLog(PathUpdateLog log);
+}

@@ -7,8 +7,12 @@ import java.time.LocalDateTime;
 @Data
 public class LearningPath {
     private Long id;
+    private String pathCode;
     private Long userId;
     private Long courseId;
+    private Long targetKnowledgePointId;
+    private Long currentVersion;
+    private String idempotencyKey;
     private Long goalId;
     private Long targetOccupationId;
     private Long profileSnapshotId;
