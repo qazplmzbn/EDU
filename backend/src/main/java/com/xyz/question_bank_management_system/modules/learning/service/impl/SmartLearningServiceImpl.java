@@ -172,14 +172,22 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         }
 
         List<QbLearningResourceTarget> targets = new ArrayList<>();
-        for (Long studentId : studentIds) {
+        if ("class".equals(targetType)) {
             QbLearningResourceTarget target = new QbLearningResourceTarget();
             target.setResourceId(resourceId);
-            target.setStudentId(studentId);
             target.setClassId(classId);
             target.setTargetType(targetType);
             target.setCreatedBy(operatorId);
             targets.add(target);
+        } else {
+            for (Long studentId : studentIds) {
+                QbLearningResourceTarget target = new QbLearningResourceTarget();
+                target.setResourceId(resourceId);
+                target.setStudentId(studentId);
+                target.setTargetType(targetType);
+                target.setCreatedBy(operatorId);
+                targets.add(target);
+            }
         }
         resourceTargetMapper.batchInsert(targets);
 

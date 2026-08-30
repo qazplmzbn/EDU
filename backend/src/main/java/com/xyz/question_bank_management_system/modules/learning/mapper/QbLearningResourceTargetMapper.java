@@ -23,11 +23,13 @@ public interface QbLearningResourceTargetMapper {
     int batchInsert(@Param("targets") List<QbLearningResourceTarget> targets);
 
     @Select({
-            "SELECT r.*",
+            "SELECT DISTINCT r.*",
             "FROM qb_learning_resource_target rt",
             "JOIN qb_learning_resource r ON r.id = rt.resource_id AND r.is_deleted = 0",
-            "WHERE rt.student_id = #{studentId}",
-            "ORDER BY rt.created_at DESC, r.updated_at DESC, r.id DESC",
+            "LEFT JOIN qb_class_member cm ON cm.class_id = rt.class_id AND rt.target_type = 'class'",
+            "WHERE (rt.target_type = 'student' AND rt.student_id = #{studentId})",
+            "   OR (rt.target_type = 'class' AND cm.student_id = #{studentId})",
+            "ORDER BY r.updated_at DESC, r.id DESC",
             "LIMIT #{limit}"
     })
     List<QbLearningResource> selectResourcesByStudentId(@Param("studentId") Long studentId,
