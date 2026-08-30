@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -87,6 +87,8 @@ import {
   isPendingAgent,
   isReceivingAgent,
 } from '@/features/teacher-agent-resource/workflow'
+import WeakPointsKnowledgeGraph from '@/components/teacher-agent/WeakPointsKnowledgeGraph.vue'
+import { cLanguageKnowledgeGraph } from '@/data/cLanguageKnowledgeGraph'
 
 const rootRef = ref(null)
 const loading = ref(false)
@@ -250,6 +252,108 @@ const lowestDimensions = computed(() =>
     .sort((a, b) => Number(a.score || 0) - Number(b.score || 0))
     .slice(0, 3),
 )
+
+// ===== 学科知识图谱（完整图谱 + 薄弱知识点高亮）=====
+// 与公开知识图谱页共用同一套环形布局：中心 C 语言核心，分组沿圆周分布，
+// 每个分组的知识点落在对应扇区内。薄弱知识点按名称匹配后高亮展示。
+const kgViewBox = { width: 1600, height: 1000, cx: 800, cy: 500, groupRadius: 245, pointRadius: 410 }
+
+const kgCenter = computed(() => ({
+  id: cLanguageKnowledgeGraph.center.id,
+  name: 'C 语言核心',
+}))
+
+const kgGroups = computed(() =>
+  cLanguageKnowledgeGraph.groups.map((group, index) => {
+    const angle = -90 + (360 / cLanguageKnowledgeGraph.groups.length) * index
+    const rad = (Math.PI / 180) * angle
+    return {
+      id: group.id,
+      name: group.name,
+      x: kgViewBox.cx + Math.cos(rad) * kgViewBox.groupRadius,
+      y: kgViewBox.cy + Math.sin(rad) * kgViewBox.groupRadius,
+    }
+  }),
+)
+
+// 学生画像中的薄弱知识点名称集合（用于在图谱中匹配高亮）
+const kgWeakNames = computed(() =>
+  new Set(weakPoints.value.map((wp) => wp.tagName || wp.name).filter(Boolean)),
+)
+
+// 薄弱点名称 → 图谱知识点名称 的别名映射
+// 画像标签与图谱节点命名粒度不一致（如“指针与地址”对应“指针变量/指针与数组”），
+// 这里兜底保证薄弱点一定能命中图谱中的相关知识点并高亮。
+const WEAK_POINT_ALIAS = {
+  '指针与地址': ['指针变量', '指针与数组', '指针解引用', '地址运算符', '指针运算', '指针初始化'],
+  '文件读写': ['文件指针', 'fopen 模式', 'fclose 关闭', 'fscanf 读取', 'fprintf 写入', 'fgetc 读取', 'fputc 写入', 'feof 判断'],
+  '结构体数组': ['结构体数组', '结构体定义', '结构体变量', '结构体指针'],
+  '指针': ['指针变量', '指针初始化', '指针解引用', '指针运算', '指针与数组', '指针与函数'],
+  '结构体': ['结构体定义', '结构体变量', '成员访问', '结构体初始化', '结构体数组', '结构体指针'],
+  '文件': ['文件指针', 'fopen 模式', 'fclose 关闭', 'fscanf 读取', 'fprintf 写入'],
+}
+
+// 判断某个图谱知识点是否命中薄弱点（精确 / 子串 / 别名 / 所属分组名）
+function isKpWeak(pointName, groupName) {
+  for (const w of kgWeakNames.value) {
+    if (!w) continue
+    if (pointName === w) return true
+    if (pointName.includes(w) || w.includes(pointName)) return true
+    const aliases = WEAK_POINT_ALIAS[w] || []
+    if (aliases.includes(pointName)) return true
+    if (groupName && (groupName.includes(w) || w.includes(groupName))) return true
+  }
+  return false
+}
+
+// 完整学科图谱的全部知识点节点（带坐标 + 是否薄弱标记）
+const kgPoints = computed(() => {
+  const groups = cLanguageKnowledgeGraph.groups
+  const pointsByGroup = new Map()
+  groups.forEach((g) => pointsByGroup.set(g.id, []))
+  cLanguageKnowledgeGraph.points.forEach((p) => {
+    if (!pointsByGroup.has(p.groupId)) pointsByGroup.set(p.groupId, [])
+    pointsByGroup.get(p.groupId).push(p)
+  })
+
+  const nodes = []
+  groups.forEach((group, groupIndex) => {
+    const groupPoints = pointsByGroup.get(group.id) || []
+    const sector = 360 / groups.length
+    const startAngle = -90 + sector * groupIndex - sector * 0.38
+    const step = groupPoints.length > 1 ? (sector * 0.76) / (groupPoints.length - 1) : 0
+
+    groupPoints.forEach((point, pointIndex) => {
+      const angle = startAngle + step * pointIndex
+      const rad = (Math.PI / 180) * angle
+      const laneOffset = (pointIndex % 3) * 18
+      const radius = kgViewBox.pointRadius + laneOffset
+      nodes.push({
+        id: point.id,
+        groupId: group.id,
+        name: point.name,
+        description: point.description || '',
+        x: kgViewBox.cx + Math.cos(rad) * radius,
+        y: kgViewBox.cy + Math.sin(rad) * radius,
+        weak: isKpWeak(point.name, group.name),
+      })
+    })
+  })
+  return nodes
+})
+
+// 传给知识图谱组件做高亮匹配的薄弱点（以图谱节点 id 为 knowledgePointId）
+const kgWeakPoints = computed(() =>
+  kgPoints.value
+    .filter((p) => p.weak)
+    .map((p) => ({ knowledgePointId: p.id, name: p.name })),
+)
+
+function handleKgPointSelect(point) {
+  if (point?.name) {
+    ElMessage.info(`已选中知识点：${point.name}${point.weak ? '（薄弱）' : ''}`)
+  }
+}
 
 const completedSet = computed(() => new Set(completedAgents.value))
 const flowingSet = computed(() => new Set(flowingEdges.value.map((edge) => edge.id)))
@@ -2274,95 +2378,142 @@ onUnmounted(() => {
       </article>
     </section>
 
-    <section class="workflow-shell">
-      <div class="mapis-board">
-        <svg class="flow-svg" viewBox="0 0 2240 660" aria-hidden="true">
-          <path
-            v-for="edge in dynamicEdges"
-            :key="edge.id"
-            :class="edgeClass(edge)"
-            :d="edge.path"
-            :data-edge-path="edge.id"
+    <!-- 学科知识图谱（替换协同画布） -->
+    <section class="knowledge-graph-section">
+      <div class="kg-layout">
+        <!-- 左侧：知识图谱 -->
+        <div class="kg-left-panel">
+          <WeakPointsKnowledgeGraph
+            :weak-points="kgWeakPoints"
+            :center="kgCenter"
+            :groups="kgGroups"
+            :points="kgPoints"
+            @select-point="handleKgPointSelect"
           />
-          <text class="resource-output-label" x="1910" y="300">审核后资源</text>
-          <circle
-            v-for="edge in dynamicEdges"
-            :key="`${edge.id}-dot`"
-            :data-edge-dot="edge.id"
-            class="flow-dot"
-            r="6"
-            :cx="edge.startX"
-            :cy="edge.startY"
-          />
-        </svg>
-
-        <div class="fixed-target-box">
-          <div class="target-box">
-            <div v-if="generatedResources.length === 0" class="target-empty">
-              <strong>等待生成</strong>
-              <span>完成资源生成智能体后展示多种个性化资源</span>
+        </div>
+        
+        <!-- 右侧：个性化路径生成过程 + 个性化资源输出 -->
+        <div class="kg-right-panel">
+          <div class="process-flow">
+            <h3 class="process-title">个性化路径生成过程</h3>
+            
+            <div class="process-steps">
+              <!-- 步骤 1：画像分析 -->
+              <div class="process-step" :class="{'active': completedAgents.includes('preprocess'), 'complete': completedAgents.includes('preprocess')}">
+                <div class="step-icon">📊</div>
+                <div class="step-content">
+                  <h4>Step 1: 画像分析</h4>
+                  <p>提取 {{ weakPoints.length }} 个薄弱知识点，{{ lowestDimensions.length }} 个能力维度</p>
+                  <ul v-if="weakPoints.length > 0" class="weak-point-list">
+                    <li v-for="wp in weakPoints.slice(0, 3)" :key="wp.knowledgePointId">• {{ wp.tagName || wp.name }}</li>
+                  </ul>
+                </div>
+                <el-icon v-if="completedAgents.includes('preprocess')"><Finished /></el-icon>
+              </div>
+              
+              <!-- 步骤 2：知识诊断 -->
+              <div class="process-step" :class="{'active': completedAgents.includes('knowledge'), 'complete': completedAgents.includes('knowledge')}">
+                <div class="step-icon">🔬</div>
+                <div class="step-content">
+                  <h4>Step 2: 知识诊断</h4>
+                  <p>识别薄弱点优先级与因果关系链</p>
+                </div>
+                <el-icon v-if="completedAgents.includes('knowledge')"><Finished /></el-icon>
+              </div>
+              
+              <!-- 步骤 3：资源推荐 -->
+              <div class="process-step" :class="{'active': completedAgents.includes('resource'), 'complete': generatedResources.length > 0}">
+                <div class="step-icon">📚</div>
+                <div class="step-content">
+                  <h4>Step 3: 资源推荐</h4>
+                  <p>生成 {{ generatedResources.length }} 个个性化学习资源</p>
+                  <div v-if="generatedResources.length > 0" class="resource-preview">
+                    <el-tag v-for="resType in [...new Set(generatedResources.map(r => r.resourceType))].slice(0, 3)" :key="resType" size="small" type="success">
+                      {{ resType }}
+                    </el-tag>
+                  </div>
+                </div>
+                <el-icon v-if="generatedResources.length > 0"><Finished /></el-icon>
+              </div>
+              
+              <!-- 步骤 4：质量审核 -->
+              <div class="process-step" :class="{'active': completedAgents.includes('qualityReview'), 'complete': generatedResources.every(r => r.saved || r.status === 'approved')}">
+                <div class="step-icon">✅</div>
+                <div class="step-content">
+                  <h4>Step 4: 质量审核</h4>
+                  <p>确保资源完整、可用、难度适配</p>
+                </div>
+                <el-icon v-if="generatedResources.every(r => r.saved || r.status === 'approved')"><Finished /></el-icon>
+              </div>
             </div>
-            <div v-else class="target-list">
-              <article v-for="card in generatedResources" :key="card.id" class="resource-card-anim">
-                <strong>{{ card.title }}</strong>
-                <span>{{ card.resourceTypeLabel || card.resourceType }}{{ card.isMultimodal ? ' · 多模态' : '' }} · {{ card.status === 'approved' ? '审核通过' : '需修改' }}</span>
+            
+            <!-- 当前状态 -->
+            <div class="process-status">
+              <div class="status-badge" :class="consultationState">
+                <span class="status-icon">⚡</span>
+                <span class="status-text">
+                  {{ consultationState === 'running' ? '智能体协同中...' : 
+                     consultationState === 'completed' ? '路径生成完成' : 
+                     consultationState === 'paused_for_teacher' ? '等待教师确认' : 
+                     '等待启动' }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="resource-output-section">
+            <div class="section-header">
+              <h3>个性化资源输出</h3>
+              <span class="count-badge">{{ generatedResources.length }}</span>
+            </div>
+            
+            <div v-if="generatedResources.length === 0" class="empty-state">
+              <el-empty description="点击“开始会诊”后开始生成资源" :image-size="60" />
+            </div>
+            
+            <div v-else class="resource-list">
+              <article v-for="card in generatedResources" :key="card.id" class="resource-item">
+                <div class="resource-header">
+                  <el-tag effect="dark" round>{{ card.sourceAgent }}</el-tag>
+                  <el-tag :type="card.isMultimodal ? 'success' : 'info'" round>{{ card.resourceTypeLabel }}</el-tag>
+                </div>
+                <h4>{{ card.title }}</h4>
+                <p class="resource-summary">{{ card.summary }}</p>
+                
+                <!-- 关联的薄弱知识点 -->
+                <div v-if="card.personalizationBasis?.['薄弱知识点']" class="linked-weak-points">
+                  <el-tag v-for="point in card.personalizationBasis['薄弱知识点'].split(/[,,]/).map(s => s.trim())" 
+                          :key="point" 
+                          size="small" 
+                          type="danger" 
+                          effect="plain"
+                  >
+                    {{ point }}
+                  </el-tag>
+                </div>
+                
+                <!-- 操作按钮 -->
+                <div class="resource-actions-mini">
+                  <el-button v-if="!card.sent" size="small" type="primary" plain @click="saveResource(card)">保存</el-button>
+                  <el-button v-if="!card.sent" size="small" success plain @click="saveResource(card, { send: true })">发送</el-button>
+                  <el-button size="small" @click="reviseResource(card)">退回</el-button>
+                </div>
               </article>
             </div>
           </div>
         </div>
-
-        <div class="draggable-nodes">
-          <button
-            v-for="agentId in agentInfoCards"
-            :key="agentId"
-            type="button"
-            class="agent-node"
-            :style="{ left: agentPositions[agentId].x + 'px', top: agentPositions[agentId].y + 'px' }"
-            :class="{
-              'is-ready': isReady(agentId),
-              'is-active': isActive(agentId),
-              'is-receiving': isReceiving(agentId),
-              'is-complete': isCompleted(agentId),
-              'is-pending': isPending(agentId),
-              'is-execution-blocked': !isReady(agentId) || Boolean(activeAgentId),
-            }"
-            :data-agent-id="agentId"
-            @mousedown="startDrag($event, agentId)"
-            @click="handleAgentClick(agentId)"
-          >
-            <div v-if="isActive(agentId)" class="processing-tooltip">Processing...</div>
-
-            <span class="status-light" :class="statusClass(agentId)" :title="agentStatus(agentId)" />
-            <span class="agent-portrait" :class="{ 'is-fallback': !agents[agentId].image }">
-              <img
-                v-if="agents[agentId].image"
-                :src="agents[agentId].image"
-                :alt="agents[agentId].title"
-                :style="{ objectPosition: agents[agentId].imagePosition || '50% center' }"
-              />
-              <el-icon v-else><component :is="agents[agentId].icon" /></el-icon>
-            </span>
-            <span class="agent-body">
-              <strong>{{ agents[agentId].title }}</strong>
-              <small>{{ agents[agentId].cnTitle }}</small>
-            </span>
-          </button>
-        </div>
       </div>
     </section>
 
-    <section class="insight-grid">
-      <div class="log-panel">
-        <div class="section-title">
-          <div class="section-title-main">
-            <h2>处理日志</h2>
-            <span>{{ logs.length }} 条</span>
-          </div>
-          <div class="section-title-actions">
-            <el-button text type="danger" :icon="Delete" @click="clearLogs">批量删除</el-button>
-          </div>
+    <!-- 处理日志 -->
+    <section class="log-section">
+      <div class="log-header">
+        <h2>学习诊断处理日志</h2>
+        <span>{{ logs.length }} 条记录</span>
+      </div>
+      <div class="log-grid">
+        <div v-if="logs.length === 0" class="log-empty">
+          <el-empty description="点击智能体后显示详细处理日志" :image-size="60" />
         </div>
-        <el-empty v-if="logs.length === 0" description="点击智能体后显示处理日志" :image-size="88" />
         <ul v-else class="log-list">
           <li v-for="log in logs" :key="log.id">
             <time>{{ log.time }}</time>
@@ -2372,7 +2523,9 @@ onUnmounted(() => {
           </li>
         </ul>
       </div>
+    </section>
 
+    <section class="agent-results-section">
       <div v-if="false" class="consultation-panel">
         <div class="section-title">
           <div class="section-title-main">

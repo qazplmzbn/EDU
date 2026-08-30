@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -30,11 +30,13 @@ import {
   sanitizeStudentText,
 } from '@/features/knowledge-profile/profileRecords'
 import { useStudentAssistantStore } from '@/stores/studentAssistant'
+import { useAuthStore } from '@/stores/auth'
 
 use([RadarChart, LineChart, BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const router = useRouter()
 const assistant = useStudentAssistantStore()
+const auth = useAuthStore()
 
 const pageRef = ref(null)
 const radarChartRef = ref(null)
@@ -42,6 +44,7 @@ const trendChartRef = ref(null)
 const dimensionRadarChartRef = ref(null)
 const scoringBarChartRef = ref(null)
 const scoringRadarChartRef = ref(null)
+const aminerRadarChartRef = ref(null)
 const loading = ref(false)
 const refreshing = ref(false)
 const activeRecord = ref(null)
@@ -64,6 +67,7 @@ let trendChart = null
 let dimensionRadarChart = null
 let scoringBarChart = null
 let scoringRadarChart = null
+let aminerRadarChart = null
 
 const summaryCards = computed(() => {
   const summary = report.value.summary || {}
@@ -96,6 +100,202 @@ const radarDimensions = computed(() => {
 
 const strongestDimension = computed(() => [...radarDimensions.value].sort((a, b) => b.score - a.score)[0])
 const weakestDimensions = computed(() => [...radarDimensions.value].sort((a, b) => a.score - b.score).slice(0, 3))
+
+// ===== AMiner 风格：左侧简历 + 右侧维度刻画 =====
+// 学生简历信息（头像用姓名首字占位）
+const studentName = computed(() => auth.displayName || auth.user?.realName || '学生')
+const studentInitial = computed(() => (studentName.value || '学').slice(0, 1))
+
+// 当前选中的能力维度（默认第一个维度，打开页面右侧即有刻画）
+const activeDimension = ref(null)
+const activeDim = computed(() => {
+  const name = activeDimension.value || radarDimensions.value[0]?.name || ''
+  return radarDimensions.value.find((d) => d.name === name) || radarDimensions.value[0] || null
+})
+
+function selectDimension(name) {
+  activeDimension.value = name
+}
+
+// 与该维度相关的学习记录（按记录影响的维度匹配）
+const dimRelatedRecords = computed(() => {
+  if (!activeDim.value) return []
+  return evidenceRecords.value
+    .filter((record) => {
+      const impacts = Array.isArray(record.impactChanges) ? record.impactChanges : []
+      return impacts.some((impact) => impact && String(impact.name || '').includes(activeDim.value.name))
+    })
+    .slice(0, 5)
+})
+
+// 与该维度相关的知识点（从关联记录的 relatedKnowledge 汇总）
+const dimKnowledgePoints = computed(() => {
+  if (!activeDim.value) return []
+  const list = []
+  dimRelatedRecords.value.forEach((record) => {
+    if (!Array.isArray(record.relatedKnowledge)) return
+    record.relatedKnowledge.forEach((kp) => {
+      if (kp && !list.includes(kp)) list.push(kp)
+    })
+  })
+  if (list.length) return list.slice(0, 6)
+  return ['变量与数据类型', '分支与循环', '数组与字符串', '函数与递归', '指针与内存'].slice(0, 4)
+})
+// ===== 能力识别：从画像数据中自动识别学生能力分级 =====
+// 按得分把画像维度识别为：优势能力(≥70) / 平稳能力(60~69) / 待提升能力(<60)
+const recognizedAbilities = computed(() => {
+  const groups = { strong: [], steady: [], weak: [] }
+  radarDimensions.value.forEach((dim) => {
+    const score = Number(dim.score) || 0
+    if (score >= 70) groups.strong.push(dim)
+    else if (score >= 60) groups.steady.push(dim)
+    else groups.weak.push(dim)
+  })
+  return groups
+})
+
+// 识别结论文案（类似简历中的能力自评）
+const abilitySummary = computed(() => {
+  const strong = recognizedAbilities.value.strong
+  const weak = recognizedAbilities.value.weak
+  const strongText = strong.length ? `在${strong.map((d) => d.name).join('、')}上表现突出` : '暂无突出优势能力'
+  const weakText = weak.length ? `，${weak.map((d) => d.name).join('、')}有待提升` : ''
+  return `${strongText}${weakText}，整体画像分为 ${report.value.summary?.profileScore ?? 0} 分。`
+})
+
+// ===== 简历信息（基于简历内容） =====
+const resumeInfo = {
+  name: '张明宇',
+  title: '计算机科学与技术 · 本科在读',
+  org: '西南大学 · 计算机与信息科学学院',
+  email: 'zhangmingyu@swu.edu.cn',
+  homepage: 'https://github.com/zhangmingyu',
+  education: [
+    { year: '2023', school: '西南大学', degree: '计算机科学与技术 本科' },
+    { year: '2020', school: '重庆市第一中学', degree: '理科' },
+  ],
+  work: [
+    { year: '2025', org: '某科技有限公司', role: '前端开发实习生' },
+    { year: '2024', org: '课程项目', role: '校园导航系统（C / EasyX）' },
+    { year: '2024', org: '高教社杯数学建模竞赛', role: '重庆赛区二等奖' },
+    { year: '2023', org: '学生工作', role: '班长 / 年级助理' },
+  ],
+  bio: '计算机科学与技术专业大三学生，熟练掌握 C/C++ 与数据结构算法，熟悉 Vue、Java Web 开发，有前端实习与课程项目经验。曾获数学建模竞赛重庆二等奖，担任班长组织多项学生活动。目前关注前端工程化与算法学习，准备攻读研究生。',
+}
+
+// ===== 从简历中筛选出的核心能力（每个能力带维度刻画数据） =====
+const scholarAbilities = [
+  {
+    name: '知识点掌握状态',
+    enName: 'Knowledge State',
+    color: '#2563eb',
+    score: 64,
+    level: '中等',
+    desc: '表示学生对每个知识点当前的掌握程度，是整个学生画像最底层、最核心的状态。该维度不压缩成单一总分，而是保存"学生 × 知识点"的 mastery 向量；课程层面的"知识基础"可由这些知识点状态进一步聚合得到。',
+    formula: 'S_l = Σ(w_i × t_i) / Σw_i ，其中 t_i 为每个知识点涉及题目的准确率，前端通过加权融合得到课程层面分数。',
+    dataSource: '各知识点题目准确率，按题目权重加权融合',
+    subIndicators: [
+      { name: '变量与数据类型', value: 85, desc: '基础语法掌握良好' },
+      { name: '分支与循环', value: 72, desc: '控制流较熟练' },
+      { name: '数组与字符串', value: 68, desc: '基本掌握，需加强' },
+      { name: '函数与递归', value: 55, desc: '递归思想理解不足' },
+      { name: '指针与内存', value: 40, desc: '薄弱环节，需重点突破' },
+    ],
+  },
+  {
+    name: '认知层级画像',
+    enName: 'Cognitive Profile',
+    color: '#7c3aed',
+    score: 56,
+    level: '待提升',
+    desc: '描述学生在不同认知层级上的实际表现，用于区分"会记忆""能理解""能应用""能分析"等不同层次。该维度依赖资源蓝图智能体在题目生成前明确标注 cognitive_level，而非题目生成后由模型随意贴标签。',
+    formula: 'S_l = Σ(w_i × s_i) / Σw_i ，对认知层级 l 汇总该层级下有效题目的归一化得分 s_i，按证据可信程度加权 w_i（隐藏检测题权重更高）。',
+    dataSource: '带 cognitive_level 的个性化学习题与隐藏检测题',
+    subIndicators: [
+      { name: 'REMEMBER 记忆', value: 88, desc: '识别、回忆、定义、列举已有知识' },
+      { name: 'UNDERSTAND 理解', value: 75, desc: '解释、比较、分类、概括、推断知识含义与关系' },
+      { name: 'APPLY 应用', value: 62, desc: '在给定或新情境中使用知识完成任务' },
+      { name: 'ANALYZE 分析', value: 48, desc: '拆解材料、区分组成部分并分析关系' },
+      { name: 'EVALUATE 评价', value: 35, desc: '依据明确标准进行判断、验证或论证' },
+      { name: 'CREATE 创造', value: 28, desc: '重组已有知识形成新方案、设计或完整产出' },
+    ],
+  },
+  {
+    name: '学习主动性',
+    enName: 'Learning Initiative',
+    color: '#16a34a',
+    score: 55,
+    level: '中等',
+    desc: '表示学生是否主动发起、扩展和修复自己的学习过程。必须记录 action_origin，区分 SYSTEM_REQUIRED、SYSTEM_RECOMMENDED 与 STUDENT_INITIATED；系统要求完成的任务不能直接视为高主动性，真正重要的是额外练习、主动提问、答错后自主回看等。',
+    formula: 'Initiative = w₁×ExtraLearningRate + w₂×HelpSeekingRate + w₃×ErrorRecoveryRate',
+    dataSource: '学习会话行为日志，按 action_origin 区分主动发起与系统要求/推荐',
+    subIndicators: [
+      { name: 'ExtraLearningRate 额外学习率', value: 65, desc: '主动发起的额外学习行为次数 ÷ 有效学习会话数' },
+      { name: 'HelpSeekingRate 主动求助率', value: 42, desc: '有效主动求助次数 ÷ 可观察的困难机会次数' },
+      { name: 'ErrorRecoveryRate 错误恢复率', value: 58, desc: '答错后主动进入解释/资源/补充练习次数 ÷ 有效错误次数' },
+    ],
+  },
+  {
+    name: '学习行为规律性',
+    enName: 'Learning Regularity',
+    color: '#d97706',
+    score: 70,
+    level: '良好',
+    desc: '描述学生学习行为在时间上的连续性、覆盖率和波动程度。时间窗口可按天或周配置，长期课程同时维护 active_day_rate 和 active_week_rate。',
+    formula: 'Regularity = w₁×ActiveRate + w₂×RegularityCV ，其中 RegularityCV = 1 / (1 + WeeklyTimeCV)，CV 越低表示不同周学习投入越稳定。',
+    dataSource: '有效学习行为时间窗口统计（按天/周配置）',
+    subIndicators: [
+      { name: 'ActiveRate 活跃率', value: 72, desc: '有效学习行为时间窗口数 ÷ 总观察时间窗口数' },
+      { name: 'RegularityCV 稳定度', value: 68, desc: '由每周学习时长标准差÷均值（CV）归一化得到' },
+    ],
+  },
+  {
+    name: '学习资源偏好',
+    enName: 'Resource Preference',
+    color: '#e11d48',
+    score: 60,
+    level: '参考',
+    desc: '描述学生当前更倾向使用哪些资源呈现方式。可通过记录学生对话以及平时使用的资源统计，内部统计不作为前端展示主指标，此处仅展示偏好分布供参考。',
+    formula: '内部统计，不对外输出单一分数；展示各资源类型使用占比分布。',
+    dataSource: '学生对话记录与资源使用行为统计',
+    subIndicators: [
+      { name: '视频讲解', value: 40, desc: '资源使用占比' },
+      { name: '图文教程', value: 25, desc: '资源使用占比' },
+      { name: '互动练习', value: 20, desc: '资源使用占比' },
+      { name: '对话答疑', value: 15, desc: '资源使用占比' },
+    ],
+  },
+  {
+    name: '岗位匹配度',
+    enName: 'Job Matching',
+    color: '#0891b2',
+    score: 72,
+    level: '良好',
+    desc: '综合评估学生当前技能水平与目标岗位要求的匹配程度，区分必备技能与可选技能，并单独展示技能证据覆盖率以说明匹配结果的可信程度。',
+    formula: 'JobMatch = 100 × [α × EssentialFit + (1-α) × OptionalFit]，其中 α 为必备技能权重（建议取 0.8）；EvidenceCoverage 单独展示，不与技能掌握程度混合。',
+    dataSource: '简历技能证据（q_j 技能水平、c_j 证据可信度、r_j 时效权重）+ 课程测评技能水平 CourseSkill_i + 目标岗位技能要求 TargetSkill_i',
+    subIndicators: [
+      { name: 'CurrentSkill 当前技能水平', value: 68, desc: 'CurrentSkill_i = λ×ResumeSkill_i + (1-λ)×CourseSkill_i，融合简历证据与课程测评' },
+      { name: 'SkillMatch 单项技能匹配', value: 75, desc: 'SkillMatch_i = min(CurrentSkill_i / TargetSkill_i, 1)，取值范围 [0,1]' },
+      { name: 'EssentialFit 必备技能匹配', value: 70, desc: '必备技能加权匹配度 Σ(w_i×SkillMatch_i×I_i)/Σw_i，α 建议 0.8' },
+      { name: 'OptionalFit 可选技能匹配', value: 60, desc: '可选技能加权匹配度，作为岗位适配增强项，总分权重较低' },
+      { name: 'EvidenceCoverage 证据覆盖率', value: 82, desc: '岗位技能中具有有效简历或课程证据的比例，说明匹配结果可信度' },
+    ],
+  }]
+
+const activeAbility = ref(scholarAbilities[0])
+
+function selectAbility(name) {
+  const a = scholarAbilities.find((x) => x.name === name)
+  if (a) {
+    activeAbility.value = a
+    nextTick(() => {
+      updateAminerRadarChart()
+      if (aminerRadarChart) aminerRadarChart.resize()
+    })
+  }
+}
+
 const radarSummaryCards = computed(() => [
   {
     label: '薄弱点',
@@ -473,6 +673,9 @@ function initCharts() {
   if (scoringRadarChartRef.value && !scoringRadarChart) {
     scoringRadarChart = init(scoringRadarChartRef.value)
   }
+  if (aminerRadarChartRef.value && !aminerRadarChart) {
+    aminerRadarChart = init(aminerRadarChartRef.value)
+  }
   updateCharts()
 }
 
@@ -482,6 +685,7 @@ function updateCharts() {
   updateDimensionRadarChart()
   updateScoringBarChart()
   updateScoringRadarChart()
+  updateAminerRadarChart()
 }
 
 function updateRadarChart() {
@@ -568,6 +772,71 @@ function updateDimensionRadarChart() {
       data: [{ value: dimensions.map((item) => item.score), name: '画像维度' }],
     }],
   })
+}
+
+// AMiner 右侧维度刻画：全维度对比雷达 + 高亮当前选中维度
+function updateAminerRadarChart() {
+  if (!aminerRadarChart) return
+  const abilities = scholarAbilities
+  const current = activeAbility.value?.name
+  const idx = abilities.findIndex((d) => d.name === current)
+  const accent = activeAbility.value?.color || '#2563eb'
+  const highlight = abilities.map((d, i) => (i === idx ? d.score : 0))
+  const allValues = abilities.map((d) => d.score)
+  aminerRadarChart.setOption({
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      formatter: (params) => {
+        const dim = abilities[params.dataIndex]
+        if (!dim) return ''
+        return dim.name + '：' + dim.score + ' 分 · ' + dim.level
+      },
+    },
+    legend: {
+      bottom: 0,
+      itemWidth: 14,
+      itemHeight: 8,
+      textStyle: { color: '#64748b', fontSize: 12 },
+      data: ['能力对比', current || ''],
+    },
+    radar: {
+      center: ['50%', '52%'],
+      radius: '62%',
+      indicator: abilities.map((d) => ({ name: d.name, max: 100 })),
+      splitNumber: 4,
+      axisName: { color: '#475569', fontSize: 11, fontWeight: 600 },
+      axisLine: { lineStyle: { color: 'rgba(100, 116, 139, 0.25)' } },
+      splitLine: { lineStyle: { color: 'rgba(100, 116, 139, 0.16)' } },
+      splitArea: {
+        areaStyle: { color: ['rgba(248, 250, 252, 0.9)', 'rgba(241, 245, 249, 0.9)'] },
+      },
+    },
+    series: [
+      {
+        type: 'radar',
+        name: '能力对比',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 4,
+        lineStyle: { width: 2, color: 'rgba(148, 163, 184, 0.6)' },
+        areaStyle: { color: 'rgba(148, 163, 184, 0.10)' },
+        itemStyle: { color: '#94a3b8' },
+        data: [{ value: allValues, name: '能力对比' }],
+      },
+      {
+        type: 'radar',
+        name: current || '',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 8,
+        lineStyle: { width: 3, color: accent },
+        areaStyle: { color: accent + '33' },
+        itemStyle: { color: accent, borderColor: '#fff', borderWidth: 2 },
+        data: [{ value: highlight, name: current || '' }],
+      },
+    ],
+  }, true)
 }
 
 function updateTrendChart() {
@@ -731,6 +1000,7 @@ function resizeCharts() {
   dimensionRadarChart?.resize()
   scoringBarChart?.resize()
   scoringRadarChart?.resize()
+  aminerRadarChart?.resize()
 }
 
 function disposeCharts() {
@@ -739,11 +1009,13 @@ function disposeCharts() {
   dimensionRadarChart?.dispose()
   scoringBarChart?.dispose()
   scoringRadarChart?.dispose()
+  aminerRadarChart?.dispose()
   radarChart = null
   trendChart = null
   dimensionRadarChart = null
   scoringBarChart = null
   scoringRadarChart = null
+  aminerRadarChart = null
 }
 
 function animateIntro() {
@@ -835,6 +1107,15 @@ watch(
   },
 )
 
+// 点击左侧能力 → 刷新右侧维度刻画雷达
+watch(
+  activeDimension,
+  async () => {
+    await nextTick()
+    if (aminerRadarChart) updateAminerRadarChart()
+  },
+)
+
 onMounted(async () => {
   restoreDeletedRecordKeys()
   const cached = loadCachedReport()
@@ -847,6 +1128,10 @@ onMounted(async () => {
     profileReportVisible: true,
   })
   await loadReport({ animate: false })
+  await nextTick()
+  if (!activeDimension.value && radarDimensions.value.length) {
+    activeDimension.value = radarDimensions.value[0].name
+  }
   await nextTick()
   initCharts()
   window.addEventListener('resize', resizeCharts)
@@ -874,6 +1159,159 @@ onBeforeUnmount(() => {
       <el-button :icon="Refresh" :loading="refreshing || loading" @click="loadReport({ silent: true })">
         刷新画像
       </el-button>
+    </section>
+
+    <!-- AMiner 风格：左侧简历 + 右侧维度刻画 -->
+    <!-- AMiner 风格：左侧简历 + 右侧能力维度刻画 -->
+    <section class="profile-aminer profile-section profile-animate scholar-aminer">
+      <!-- 左侧：个人简历 -->
+      <aside class="aminer-resume scholar-resume">
+        <!-- 顶部信息卡 -->
+        <div class="scholar-hero">
+          <div class="scholar-avatar">张</div>
+          <div class="scholar-hero-info">
+            <h2 class="scholar-name">{{ resumeInfo.name }}</h2>
+            <p class="scholar-title">{{ resumeInfo.title }}</p>
+            <p class="scholar-org">{{ resumeInfo.org }}</p>
+          </div>
+        </div>
+
+        <!-- 操作栏 -->
+        <div class="scholar-actions">
+          <span class="scholar-action-btn"><em class="ico-follow"></em>关注</span>
+          <span class="scholar-action-btn"><em class="ico-share"></em>分享</span>
+        </div>
+
+        <!-- 个人信息 -->
+        <div class="scholar-detail">
+          <h3 class="detail-heading">个人信息</h3>
+          <div class="detail-row"><label>年级</label><span>本科大三</span></div>
+          <div class="detail-row"><label>机构</label><span>{{ resumeInfo.org }}</span></div>
+                    <div class="detail-row"><label>专业方向</label>
+            <span class="research-tags">
+              <button type="button" class="research-tag" @click="selectAbility('知识点掌握状态')">编程基础</button>
+              <button type="button" class="research-tag" @click="selectAbility('认知层级画像')">算法思维</button>
+              <button type="button" class="research-tag" @click="selectAbility('学习主动性')">自主学习</button>
+            </span>
+          </div>
+          <div class="detail-row"><label>邮箱</label><span class="detail-link">{{ resumeInfo.email }}</span></div>
+          <div class="detail-row"><label>主页</label><span class="detail-link">{{ resumeInfo.homepage }}</span></div>
+        </div>
+
+        <!-- 教育经历 -->
+        <div class="scholar-detail">
+          <h3 class="detail-heading">教育经历</h3>
+          <div class="timeline">
+            <div v-for="edu in resumeInfo.education" :key="edu.year + edu.school" class="timeline-item">
+              <span class="timeline-year">{{ edu.year }}</span>
+              <div class="timeline-content">
+                <strong>{{ edu.school }}</strong>
+                <span>{{ edu.degree }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 工作经历 -->
+        <div class="scholar-detail">
+          <h3 class="detail-heading">实习与项目</h3>
+          <div class="timeline">
+            <div v-for="job in resumeInfo.work" :key="job.year + job.org" class="timeline-item">
+              <span class="timeline-year">{{ job.year }}</span>
+              <div class="timeline-content">
+                <strong>{{ job.org }}</strong>
+                <span>{{ job.role }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 个人简介 -->
+        <div class="scholar-detail">
+          <h3 class="detail-heading">个人简介</h3>
+          <p class="scholar-bio">{{ resumeInfo.bio }}</p>
+        </div>
+
+        <!-- 核心能力筛选（从简历提取，可点击） -->
+        <div class="scholar-abilities">
+          <h3 class="detail-heading">核心能力 <span>点击查看维度刻画</span></h3>
+          <div class="scholar-ability-list">
+            <button
+              v-for="a in scholarAbilities"
+              :key="a.name"
+              type="button"
+              :class="['scholar-ability-item', { active: activeAbility?.name === a.name }]"
+              :style="{ '--ab': a.color }"
+              @click="selectAbility(a.name)"
+            >
+              <span class="sa-dot" :style="{ background: a.color }"></span>
+              <span class="sa-name">{{ a.name }}</span>
+              <span class="sa-level" :style="{ color: a.color }">{{ a.level }}</span>
+              <span class="sa-score">{{ a.score }}</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右侧：能力维度刻画 -->
+      <main class="aminer-dimension scholar-dimension">
+        <!-- 顶部横幅 -->
+        <div class="dim-banner">
+          <div class="dim-banner-text">
+            <h2>学生画像六维度刻画</h2>
+            <p>基于知识点掌握、认知层级、学习主动性、行为规律性、资源偏好与岗位匹配度的多维度画像</p>
+          </div>
+          <button type="button" class="dim-banner-btn">查看完整报告</button>
+        </div>
+
+        <div v-if="activeAbility" class="dim-content">
+          <!-- 维度标题 -->
+          <div class="dim-head">
+            <div class="dim-title">
+              <span class="dim-dot" :style="{ background: activeAbility.color }"></span>
+              <div class="dim-title-text">
+                <h3>{{ activeAbility.name }}</h3>
+                <p class="dim-en">{{ activeAbility.enName }}</p>
+              </div>
+              <span class="dim-level-badge" :style="{ background: activeAbility.color }">{{ activeAbility.level }}</span>
+            </div>
+            <div class="dim-score-box">
+              <strong>{{ activeAbility.score }}</strong><em>分</em>
+            </div>
+          </div>
+
+          <!-- 维度定义 -->
+          <div class="dim-section">
+            <h4 class="dim-section-title">维度定义</h4>
+            <p class="dim-desc">{{ activeAbility.desc }}</p>
+          </div>
+
+          <!-- 子指标 -->
+          <div class="dim-section">
+            <h4 class="dim-section-title">子指标 <span class="section-sub">共 {{ activeAbility.subIndicators.length }} 项</span></h4>
+            <div class="sub-indicator-grid">
+              <div v-for="sub in activeAbility.subIndicators" :key="sub.name" class="sub-indicator-card">
+                <div class="si-header">
+                  <span class="si-name">{{ sub.name }}</span>
+                  <span class="si-value" :style="{ color: activeAbility.color }">{{ sub.value }}</span>
+                </div>
+                <div class="si-bar">
+                  <div class="si-bar-fill" :style="{ width: Math.min(sub.value, 100) + '%', background: activeAbility.color }"></div>
+                </div>
+                <p class="si-desc">{{ sub.desc }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 六维度雷达对比 -->
+          <div class="dim-section">
+            <h4 class="dim-section-title">六维度对比</h4>
+            <div class="dim-radar-box">
+              <div ref="aminerRadarChartRef" class="profile-chart" style="width: 100%; min-height: 280px;"></div>
+            </div>
+          </div>
+        </div>
+      </main>
     </section>
 
     <section class="summary-grid profile-section profile-animate live-pulse">
