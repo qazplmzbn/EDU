@@ -1,0 +1,8 @@
+{
+  "meta": {"course": "C语言", "course_id": "C", "schema_version": "3.0"},
+  "nodes": [
+    {"id": "C", "name": "C语言", "type": "Course", "level": 0, "parent": null},
+    {"id": "C.BAD", "name": "无父节点知识点", "type": "KnowledgePoint", "level": 2, "parent": "C.MISSING"}
+  ],
+  "edges": []
+}

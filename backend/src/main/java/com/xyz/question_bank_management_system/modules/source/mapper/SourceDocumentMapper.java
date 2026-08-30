@@ -1,3 +1,20 @@
 package com.xyz.question_bank_management_system.modules.source.mapper;
-import com.xyz.question_bank_management_system.modules.source.entity.SourceDocument; import org.apache.ibatis.annotations.*; import java.util.List;
-@Mapper public interface SourceDocumentMapper { @Insert("INSERT INTO source_document(title,document_type,author_org,source_url,file_asset_id,version,published_at,authority_level,content_hash,parse_status,created_at,updated_at,is_deleted) VALUES(#{title},#{documentType},#{authorOrg},#{sourceUrl},#{fileAssetId},#{version},#{publishedAt},#{authorityLevel},#{contentHash},#{parseStatus},NOW(3),NOW(3),0)") @Options(useGeneratedKeys=true,keyProperty="id") int insert(SourceDocument e); @Select("SELECT * FROM source_document WHERE id=#{id} AND is_deleted=0") SourceDocument selectById(@Param("id") Long id); @Select("SELECT * FROM source_document WHERE is_deleted=0 ORDER BY created_at DESC,id DESC") List<SourceDocument> selectAll(); @Update("UPDATE source_document SET parse_status=#{status},updated_at=NOW(3) WHERE id=#{id}") int updateParseStatus(@Param("id") Long id,@Param("status") String status); }
+
+import com.xyz.question_bank_management_system.modules.source.entity.SourceDocument;
+import org.apache.ibatis.annotations.*;
+
+import java.util.List;
+
+@Mapper
+public interface SourceDocumentMapper {
+    @Insert("INSERT INTO source_document(title,document_type,author_org,source_url,file_asset_id,version,published_at,authority_level,content_hash,parse_status,created_at,updated_at,is_deleted) VALUES(#{title},#{documentType},#{authorOrg},#{sourceUrl},#{fileAssetId},#{version},#{publishedAt},#{authorityLevel},#{contentHash},#{parseStatus},NOW(3),NOW(3),0)")
+    @Options(useGeneratedKeys=true,keyProperty="id") int insert(SourceDocument value);
+
+    @Insert("INSERT INTO source_document(course_id,title,document_type,source_kind,review_status,import_code,author_org,source_url,file_asset_id,version,authority_level,content_hash,parse_status,created_at,updated_at,is_deleted) VALUES(#{courseId},#{title},#{documentType},#{sourceKind},#{reviewStatus},#{importCode},#{authorOrg},#{sourceUrl},#{fileAssetId},#{version},#{authorityLevel},#{contentHash},#{parseStatus},NOW(3),NOW(3),0)")
+    @Options(useGeneratedKeys=true,keyProperty="id") int insertCourseGraph(SourceDocument value);
+
+    @Select("SELECT * FROM source_document WHERE id=#{id} AND is_deleted=0") SourceDocument selectById(@Param("id")Long id);
+    @Select("SELECT * FROM source_document WHERE is_deleted=0 ORDER BY created_at DESC,id DESC") List<SourceDocument> selectAll();
+    @Update("UPDATE source_document SET parse_status=#{status},updated_at=NOW(3) WHERE id=#{id}") int updateParseStatus(@Param("id")Long id,@Param("status")String status);
+    @Update("UPDATE source_document SET review_status='APPROVED',updated_at=NOW(3) WHERE import_code=#{importCode} AND review_status='PENDING'") int approveImport(String importCode);
+}
