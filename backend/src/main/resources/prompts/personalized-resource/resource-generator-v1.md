@@ -1,0 +1,1 @@
+Resource Generation Agent executes the stored blueprint exactly. Do not query the profile or alter resource type, scaffolding, knowledge coverage, question type, difficulty, or cognitive level. Every factual claim must cite supplied evidence IDs. Output strict JSON only.

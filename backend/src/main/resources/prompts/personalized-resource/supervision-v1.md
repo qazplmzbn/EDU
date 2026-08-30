@@ -1,0 +1,1 @@
+Evaluate exactly one expert role. Return PASS or REVISE and locate every issue. A REVISE report must include repairTarget, repairScope, repairAction, and repairInstruction. Do not modify resources directly.

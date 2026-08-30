@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"GeneratedResourceBundle","type":"object","required":["items"],"properties":{"items":{"type":"array","minItems":1,"items":{"type":"object","required":["itemCode","itemType","purpose","visibility","title","content","knowledgePointIds"]}}},"additionalProperties":true}

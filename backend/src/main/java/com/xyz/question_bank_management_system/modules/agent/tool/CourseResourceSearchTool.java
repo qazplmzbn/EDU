@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.agent.tool;
+import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningResourceMapper;import lombok.RequiredArgsConstructor;import org.springframework.stereotype.Component;import java.util.*;
+@Component @RequiredArgsConstructor public class CourseResourceSearchTool {private final QbLearningResourceMapper mapper;public List<QbLearningResource> query(List<Long> ids){return ids==null||ids.isEmpty()?List.of():mapper.selectByKnowledgePointIds(ids,20);}}

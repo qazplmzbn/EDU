@@ -42,4 +42,5 @@ public interface QbQuestionMapper {
 
     List<QbQuestion> selectPublishedByIds(@Param("questionIds") List<Long> questionIds,
                                           @Param("visibleTeacherIds") List<Long> visibleTeacherIds);
+    @Select("SELECT * FROM qb_question WHERE status=2 AND is_deleted=0 ORDER BY id DESC LIMIT #{limit}") List<QbQuestion> selectRecentPublished(@Param("limit")int limit);
 }

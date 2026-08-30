@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.agent.entity;
+import lombok.Data;import java.math.BigDecimal;import java.time.LocalDateTime;
+@Data public class ResourceItem {private Long id;private Long bundleId;private String itemCode;private String generatedQuestionCode;private String itemType;private String purpose;private String visibility;private String title;private String contentJson;private BigDecimal questionDifficulty;private String cognitiveLevel;private String gradingKeyJson;private Integer orderNo;private String status;private String normalizedTextHash;private Long simhash64;private LocalDateTime createdAt;}

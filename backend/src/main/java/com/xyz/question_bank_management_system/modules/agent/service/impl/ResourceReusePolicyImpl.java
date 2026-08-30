@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.agent.service.impl;
+import com.xyz.question_bank_management_system.modules.agent.service.ResourceReusePolicy;import org.springframework.stereotype.Service;import java.util.Set;
+@Service public class ResourceReusePolicyImpl implements ResourceReusePolicy {public String decide(String event,boolean published){if(!published)return "GENERATE";if("CONTENT_INVALIDATED".equals(event))return "MARK_STALE";if(Set.of("RECOMMENDED_KNOWLEDGE_CHANGED","RESOURCE_COMPLETED","CONSECUTIVE_WRONG","LEARNING_STAGNATION","REVIEW_FAILED","MANUAL_REGENERATE").contains(event))return "REGENERATE";return "REUSE";}}

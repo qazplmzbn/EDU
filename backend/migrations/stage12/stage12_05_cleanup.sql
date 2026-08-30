@@ -1,0 +1,1 @@
+SET @stage12_cleanup_confirmed=COALESCE(@stage12_cleanup_confirmed,0);SELECT IF(@stage12_cleanup_confirmed=1,'Approval recorded; old JSON review caches may become non-authoritative.','BLOCKED: preserve teacher draft resources and legacy source links.') cleanup_status;
