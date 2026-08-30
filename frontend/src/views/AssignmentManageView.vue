@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assignmentApi, classApi, paperApi, teacherApi } from '@/api/services'
-import { formatDateTime, splitCsv, toLocalDateTimeString } from '@/utils/format'
+import { formatDateTime, toLocalDateTimeString } from '@/utils/format'
 import { QUESTION_TYPE_OPTIONS, labelBy, typeBy, ATTEMPT_STATUS_OPTIONS } from '@/constants/enums'
 import AttemptQuestionReview from '@/components/AttemptQuestionReview.vue'
 
@@ -40,8 +40,9 @@ const targetVisible = ref(false)
 const targetLoading = ref(false)
 const DEFAULT_TARGET_FORM = {
   assignmentId: undefined,
-  userIdsCsv: '',
-  classIds: [],
+  groups: [],
+  savedStudentTargets: [],
+  retainedStudentIds: [],
 }
 
 const targetForm = reactive({ ...DEFAULT_TARGET_FORM })
@@ -127,6 +128,41 @@ function resetTargetForm(assignmentId = undefined) {
     ...DEFAULT_TARGET_FORM,
     assignmentId,
   })
+}
+
+function createTargetGroup(classId = undefined, mode = 'all') {
+  return { classId, mode, studentIds: [], students: [], loading: false }
+}
+
+function addTargetGroup() {
+  targetForm.groups.push(createTargetGroup())
+}
+
+function removeTargetGroup(index) {
+  targetForm.groups.splice(index, 1)
+}
+
+async function loadGroupStudents(group) {
+  if (!group?.classId) {
+    group.students = []
+    group.studentIds = []
+    return
+  }
+  group.loading = true
+  try {
+    const data = await classApi.students(group.classId)
+    group.students = Array.isArray(data) ? data : []
+  } catch (error) {
+    group.students = []
+    ElMessage.error(error.message || '加载班级学生失败')
+  } finally {
+    group.loading = false
+  }
+}
+
+async function changeTargetClass(group) {
+  group.studentIds = []
+  await loadGroupStudents(group)
 }
 
 function clearActiveDetails() {
@@ -249,20 +285,44 @@ async function closeAssignment(id) {
   }
 }
 
-function openTargetDialog(row) {
+async function openTargetDialog(row) {
   resetTargetForm(row.id)
   targetVisible.value = true
+  targetLoading.value = true
+  try {
+    const config = await assignmentApi.targets(row.id)
+    targetForm.groups = (config?.classTargets || []).map((item) => createTargetGroup(item.classId, 'all'))
+    targetForm.savedStudentTargets = config?.studentTargets || []
+    targetForm.retainedStudentIds = targetForm.savedStudentTargets.map((item) => Number(item.studentId))
+    await Promise.all(targetForm.groups.map((group) => loadGroupStudents(group)))
+  } catch (error) {
+    ElMessage.error(error.message || '加载目标配置失败')
+  } finally {
+    targetLoading.value = false
+  }
 }
 
 async function saveTargets() {
   targetLoading.value = true
   try {
-    const userIds = splitCsv(targetForm.userIdsCsv, (v) => Number(v)).filter((v) => !Number.isNaN(v))
-    const classIds = (targetForm.classIds || []).map((v) => Number(v)).filter((v) => !Number.isNaN(v))
+    const targets = targetForm.groups.map((group) => ({
+      classId: Number(group.classId),
+      studentIds: group.mode === 'all'
+        ? []
+        : (group.studentIds || []).map((id) => Number(id)).filter((id) => !Number.isNaN(id)),
+    }))
+    if (targets.some((target) => !target.classId)) {
+      ElMessage.warning('请为每个目标组选择班级')
+      return
+    }
+    if (new Set(targets.map((target) => target.classId)).size !== targets.length) {
+      ElMessage.warning('同一班级不能重复配置目标组')
+      return
+    }
 
     await assignmentApi.setTargets(targetForm.assignmentId, {
-      userIds,
-      classIds,
+      targets,
+      retainedStudentIds: targetForm.retainedStudentIds,
     })
     ElMessage.success('目标设置已更新')
     targetVisible.value = false
@@ -274,6 +334,20 @@ async function saveTargets() {
     ElMessage.error(error.message || '更新目标设置失败')
   } finally {
     targetLoading.value = false
+  }
+}
+
+async function removeSavedStudentTarget(student) {
+  try {
+    await ElMessageBox.confirm(`确认移除 ${student.displayName || student.username || student.studentId} 的独立投放资格？`, '提示', { type: 'warning' })
+    await assignmentApi.removeStudentTarget(targetForm.assignmentId, student.studentId)
+    targetForm.savedStudentTargets = targetForm.savedStudentTargets.filter((item) => Number(item.studentId) !== Number(student.studentId))
+    targetForm.retainedStudentIds = targetForm.retainedStudentIds.filter((id) => Number(id) !== Number(student.studentId))
+    ElMessage.success('已移除独立学生目标')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '移除独立学生目标失败')
+    }
   }
 }
 
@@ -544,29 +618,40 @@ onMounted(async () => {
     </template>
   </el-dialog>
 
-  <el-dialog v-model="targetVisible" title="配置目标范围" width="620px">
+  <el-dialog v-model="targetVisible" title="配置目标范围" width="760px">
     <el-form label-width="110px">
       <el-form-item label="作业ID">
         <el-input v-model="targetForm.assignmentId" disabled />
       </el-form-item>
-      <el-form-item label="目标班级">
-        <el-select v-model="targetForm.classIds" multiple filterable style="width: 100%" placeholder="请选择班级">
-          <el-option v-for="clazz in classes" :key="clazz.id" :value="clazz.id" :label="`${clazz.className} (${clazz.classCode})`" />
-        </el-select>
+      <el-form-item label="投放组">
+        <div style="width: 100%; display: grid; gap: 12px">
+          <el-card v-for="(group, index) in targetForm.groups" :key="index" shadow="never">
+            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 10px">
+              <el-select v-model="group.classId" filterable placeholder="选择目标班级" style="flex: 1" @change="changeTargetClass(group)">
+                <el-option v-for="clazz in classes" :key="clazz.id" :value="clazz.id" :label="`${clazz.className} (${clazz.classCode})`" />
+              </el-select>
+              <el-button type="danger" link @click="removeTargetGroup(index)">移除</el-button>
+            </div>
+            <el-radio-group v-model="group.mode">
+              <el-radio value="all">全班学生</el-radio>
+              <el-radio value="selected">指定学生</el-radio>
+            </el-radio-group>
+            <el-select v-if="group.mode === 'selected'" v-model="group.studentIds" multiple filterable :loading="group.loading" :disabled="!group.classId" placeholder="从所选班级中选择学生" style="width: 100%; margin-top: 10px">
+              <el-option v-for="student in group.students" :key="student.studentId" :value="student.studentId" :label="`${student.displayName || student.username || student.studentId} (${student.username || student.studentId})`" />
+            </el-select>
+          </el-card>
+          <el-button plain @click="addTargetGroup">添加班级投放组</el-button>
+        </div>
       </el-form-item>
-      <el-form-item label="目标用户ID">
-        <el-input
-          v-model="targetForm.userIdsCsv"
-          type="textarea"
-          :rows="4"
-          placeholder="逗号分隔，例如：10001,10002"
-        />
+      <el-form-item v-if="targetForm.savedStudentTargets.length" label="现有独立学生">
+        <div>
+          <el-tag v-for="student in targetForm.savedStudentTargets" :key="student.studentId" closable style="margin: 0 8px 8px 0" @close="removeSavedStudentTarget(student)">
+            {{ student.displayName || student.username || student.studentId }} (#{{ student.studentId }})
+          </el-tag>
+          <div class="form-help">独立学生目标不保存来源班级；保存新配置会以当前投放组为准重新计算。</div>
+        </div>
       </el-form-item>
-      <el-alert
-        title="两个字段都留空时，默认按任课教师名下学生和已参与学生展示完成情况。"
-        type="info"
-        :closable="false"
-      />
+      <el-alert title="不添加投放组即保存，表示无人可见、无人可开始作答。已发布作业在出现任一作答记录后不能修改目标。" type="info" :closable="false" />
     </el-form>
     <template #footer>
       <el-button @click="targetVisible = false">取消</el-button>
