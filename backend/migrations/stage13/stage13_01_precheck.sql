@@ -1,0 +1,2 @@
+SELECT 'published_question_without_metadata' check_name,COUNT(*) problem_count FROM resource_item i JOIN resource_bundle b ON b.id=i.bundle_id WHERE b.status='PUBLISHED' AND i.generated_question_code IS NOT NULL AND (i.question_difficulty IS NULL OR i.grading_key_json IS NULL);
+SELECT 'duplicate_generated_question_code' check_name,COUNT(*) problem_count FROM (SELECT generated_question_code FROM resource_item WHERE generated_question_code IS NOT NULL GROUP BY generated_question_code HAVING COUNT(*)>1)x;

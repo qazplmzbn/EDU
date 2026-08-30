@@ -16,6 +16,8 @@ import com.xyz.question_bank_management_system.modules.llm.entity.QbLlmCall;
 import com.xyz.question_bank_management_system.modules.llm.mapper.QbLlmCallMapper;
 import com.xyz.question_bank_management_system.modules.org.mapper.QbClassMemberMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentKnowledgeStateMapper;
+import com.xyz.question_bank_management_system.modules.learning.dto.ResourceInteractionSubmitRequest;
+import com.xyz.question_bank_management_system.modules.learning.service.InteractionSubmissionService;
 import com.xyz.question_bank_management_system.modules.profile.service.StudentProfileService;
 import com.xyz.question_bank_management_system.modules.profile.entity.StudentKnowledgeState;
 import com.xyz.question_bank_management_system.modules.bank.service.AttemptService;
@@ -33,6 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -82,6 +85,7 @@ public class AttemptServiceImpl implements AttemptService {
     private final QbQuestionUserStatMapper questionUserStatMapper;
     private final QbWrongQuestionMapper wrongQuestionMapper;
     private final StudentKnowledgeStateMapper studentKnowledgeStateMapper;
+    private final InteractionSubmissionService interactionSubmissionService;
     private final StudentProfileService studentProfileService;
     private final UserAbilityService userAbilityService;
 
@@ -429,7 +433,7 @@ public class AttemptServiceImpl implements AttemptService {
                 gradingRecordMapper.insert(gr);
 
                 // stats
-                updateStats(userId, aq, ok ? 1 : 0, now);
+                updateStats(userId, ans, aq, ok ? 1 : 0, now);
                 if (!ok) {
                     wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), now);
                 }
@@ -458,7 +462,7 @@ public class AttemptServiceImpl implements AttemptService {
                     gr.setIsFinal(llm.needsReview ? 0 : 1);
                     gradingRecordMapper.insert(gr);
 
-                    updateStats(userId, aq, score == maxScore ? 1 : 0, now);
+                    updateStats(userId, ans, aq, score == maxScore ? 1 : 0, now);
                     if (score < maxScore) {
                         wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), now);
                     }
@@ -466,7 +470,7 @@ public class AttemptServiceImpl implements AttemptService {
                     // Fall back to manual review when the LLM result is unavailable.
                     needsReview = 1;
                     answerMapper.updateScoring(ans.getId(), 0, 0, 0, now);
-                    updateStats(userId, aq, 0, now);
+                    updateStats(userId, ans, aq, 0, now);
                     wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), now);
 
                     QbGradingRecord gr = new QbGradingRecord();
@@ -717,7 +721,7 @@ public class AttemptServiceImpl implements AttemptService {
                 gr.setIsFinal(1);
                 gradingRecordMapper.insert(gr);
 
-                updateStats(userId, aq, ok ? 1 : 0, gradedAt);
+                updateStats(userId, ans, aq, ok ? 1 : 0, gradedAt);
                 if (!ok) {
                     wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), gradedAt);
                 }
@@ -728,7 +732,7 @@ public class AttemptServiceImpl implements AttemptService {
             LocalDateTime gradedAt = LocalDateTime.now();
             if (isAnswerBlank(ans.getAnswerContent())) {
                 answerMapper.updateScoring(ans.getId(), 0, 0, 0, gradedAt);
-                updateStats(userId, aq, 0, gradedAt);
+                updateStats(userId, ans, aq, 0, gradedAt);
                 wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), gradedAt);
 
                 QbGradingRecord gr = new QbGradingRecord();
@@ -765,14 +769,14 @@ public class AttemptServiceImpl implements AttemptService {
                 gr.setIsFinal(llm.needsReview ? 0 : 1);
                 gradingRecordMapper.insert(gr);
 
-                updateStats(userId, aq, score == maxScore ? 1 : 0, gradedAt);
+                updateStats(userId, ans, aq, score == maxScore ? 1 : 0, gradedAt);
                 if (score < maxScore) {
                     wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), gradedAt);
                 }
             } else {
                 needsReview = 1;
                 answerMapper.updateScoring(ans.getId(), 0, 0, 0, gradedAt);
-                updateStats(userId, aq, 0, gradedAt);
+                updateStats(userId, ans, aq, 0, gradedAt);
                 wrongQuestionMapper.upsertWrong(userId, aq.getQuestionId(), gradedAt);
 
                 QbGradingRecord gr = new QbGradingRecord();
@@ -1175,14 +1179,17 @@ public class AttemptServiceImpl implements AttemptService {
         return s;
     }
 
-    private void updateStats(Long userId, QbAttemptQuestion aq, int correctInc, LocalDateTime at) {
+    private void updateStats(Long userId, QbAnswer answer, QbAttemptQuestion aq, int correctInc, LocalDateTime at) {
         questionUserStatMapper.upsert(userId, aq.getQuestionId(), correctInc, at);
-
-        for (Long knowledgePointId : parseKnowledgePointIds(aq.getKnowledgeSnapshotJson())) {
-            if (knowledgePointId == null) continue;
-            double init = correctInc;
-            String level = correctInc > 0 ? "mastered" : "weak";
-            studentKnowledgeStateMapper.upsertAttempt(userId, knowledgePointId, correctInc, init, level, 0.1);
+        // Ordinary bank/assignment/exam attempts are deliberately excluded from
+        // the personalized-resource evidence loop. Generated questions are
+        // applied once by InteractionSubmissionService.
+        if (StringUtils.hasText(aq.getGeneratedQuestionCode())) {
+            ResourceInteractionSubmitRequest request = new ResourceInteractionSubmitRequest();
+            request.setGeneratedQuestionCode(aq.getGeneratedQuestionCode());
+            request.setAnswer(answer.getAnswerContent());
+            request.setActionOrigin("SYSTEM_REQUIRED");
+            interactionSubmissionService.submit(userId, "attempt-answer-" + answer.getId(), request);
         }
     }
 

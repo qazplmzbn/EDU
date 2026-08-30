@@ -7,6 +7,7 @@ public class QbAttemptQuestion {
     private Long id;
     private Long attemptId;
     private Long questionId;
+    private String generatedQuestionCode;
     private Integer orderNo;
     private Integer score;
     private String snapshotJson;

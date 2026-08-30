@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.learning.service;
+import com.xyz.question_bank_management_system.modules.profile.entity.StudentProfileSnapshot;import com.xyz.question_bank_management_system.modules.profile.model.ValidatedInteraction;
+public interface ProfileEvidenceConsumer {StudentProfileSnapshot apply(String eventId,ValidatedInteraction interaction);}
