@@ -15,4 +15,7 @@ public interface StudentProfileSnapshotMapper {
 
     @Select("SELECT * FROM student_profile_snapshot WHERE user_id=#{userId} ORDER BY created_at DESC,id DESC LIMIT #{limit}")
     List<StudentProfileSnapshot> selectRecent(@Param("userId") Long userId,@Param("limit") int limit);
+    @Select("SELECT * FROM student_profile_snapshot WHERE user_id=#{userId} AND course_id=#{courseId} ORDER BY profile_version DESC,id DESC LIMIT 1") StudentProfileSnapshot selectLatest(@Param("userId")Long userId,@Param("courseId")Long courseId);
+    @Select("SELECT * FROM student_profile_snapshot WHERE user_id=#{userId} AND course_id=#{courseId} ORDER BY profile_version DESC,id DESC LIMIT 1 FOR UPDATE") StudentProfileSnapshot selectLatestForUpdate(@Param("userId")Long userId,@Param("courseId")Long courseId);
+    @Insert("INSERT INTO student_profile_snapshot(user_id,course_id,profile_version,calculated_at,algorithm_version,correlation_id,knowledge_state_json,resource_preference_json,cognitive_profile_json,initiative_json,regularity_json,profile_summary,trigger_type,trigger_id,evidence_count,created_at) VALUES(#{userId},#{courseId},#{profileVersion},#{calculatedAt},#{algorithmVersion},#{correlationId},#{knowledgeStateJson},#{resourcePreferenceJson},#{cognitiveProfileJson},#{initiativeJson},#{regularityJson},#{profileSummary},#{triggerType},#{triggerId},#{evidenceCount},NOW(3))") @Options(useGeneratedKeys=true,keyProperty="id") int insertVersioned(StudentProfileSnapshot snapshot);
 }

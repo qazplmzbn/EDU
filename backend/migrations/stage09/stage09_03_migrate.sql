@@ -1,0 +1,2 @@
+UPDATE student_knowledge_state s JOIN knowledge_point k ON k.id=s.knowledge_point_id SET s.course_id=k.course_id,s.state_version=GREATEST(s.evidence_count,1) WHERE s.course_id IS NULL;
+INSERT INTO profile_algorithm_policy(policy_version,status,learning_rate,learning_practice_weight,hidden_assessment_weight,confidence_scale,dimkt_enabled,config_json) VALUES('weighted_bkt_elo_v1','ACTIVE',0.2000,0.7000,1.0000,5.0000,0,JSON_OBJECT('source','stage09')) ON DUPLICATE KEY UPDATE policy_version=policy_version;
