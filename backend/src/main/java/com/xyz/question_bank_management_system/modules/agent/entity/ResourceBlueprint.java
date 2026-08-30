@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.agent.entity;
+import lombok.Data;import java.time.LocalDateTime;
+@Data public class ResourceBlueprint {private Long id;private String blueprintCode;private Long resourceUnitId;private Long profileVersionUsed;private String policyVersion;private String status;private String resourcePlanJson;private String learningQuestionPlanJson;private String hiddenAssessmentPlanJson;private String profileEvidenceJson;private String graphEvidenceJson;private String capabilitySnapshotJson;private String schemaVersion;private String correlationId;private LocalDateTime createdAt;}

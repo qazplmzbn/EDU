@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.agent.tool;
+import com.xyz.question_bank_management_system.exception.*;import com.xyz.question_bank_management_system.modules.agent.mapper.PersonalizedResourceMapper;import lombok.RequiredArgsConstructor;import org.springframework.stereotype.Component;import java.util.*;
+@Component @RequiredArgsConstructor public class CourseResourceCapabilityQueryTool {private final PersonalizedResourceMapper mapper;public List<String> query(Long courseId){List<String> rows=mapper.capabilities(courseId);if(rows.isEmpty())throw BizException.of(ErrorCode.FAILED_INPUT,"课程未配置可用资源类型");return rows;}}

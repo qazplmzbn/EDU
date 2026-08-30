@@ -1,0 +1,3 @@
+package com.xyz.question_bank_management_system.modules.agent.entity;
+import lombok.Data;import java.time.LocalDateTime;
+@Data public class ResourceGenerationJob {private Long id;private String jobCode;private Long userId;private Long courseId;private Long pathVersionId;private Long resourceUnitId;private Long blueprintId;private String generationPolicyVersion;private String idempotencyKey;private String status;private Integer retryCount;private Integer maxRevisionRounds;private String inputSnapshotJson;private String errorCode;private String errorMessage;private String correlationId;private LocalDateTime createdAt;private LocalDateTime startedAt;private LocalDateTime finishedAt;}

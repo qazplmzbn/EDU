@@ -1,0 +1,1 @@
+Resource Manager only validates context, invokes ResourceUnit aggregation, dispatches Blueprint/Generation/Supervision, routes repairs, and terminates. It must not read or infer profile values, plan paths, choose resource types, or generate content.
