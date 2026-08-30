@@ -7,12 +7,20 @@ import java.time.LocalDateTime;
 @Data
 public class QbKnowledgeRelation {
     private Long id;
+    private Long courseId;
+    private Long graphVersionId;
+    private String relationCode;
+    private Long sourceKnowledgePointId;
+    private Long targetKnowledgePointId;
     private Long sourceId;
     private Long targetId;
     private String relationType;
     private Double weight;
     private Double confidence;
     private String sourceType;
+    private String status;
+    private LocalDateTime publishedAt;
+    private Long createdBy;
     private String description;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

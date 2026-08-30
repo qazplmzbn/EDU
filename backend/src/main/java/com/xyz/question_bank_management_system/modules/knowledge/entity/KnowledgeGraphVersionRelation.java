@@ -3,17 +3,16 @@ package com.xyz.question_bank_management_system.modules.knowledge.entity;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
-public class KnowledgeRelation {
+public class KnowledgeGraphVersionRelation {
     private Long id;
     private Long courseId;
     private Long graphVersionId;
     private String relationCode;
     private Long sourceKnowledgePointId;
     private Long targetKnowledgePointId;
-    private Long sourceId;
-    private Long targetId;
     private String relationType;
     private BigDecimal weight;
     private BigDecimal confidence;
@@ -21,8 +20,6 @@ public class KnowledgeRelation {
     private String status;
     private LocalDateTime publishedAt;
     private Long createdBy;
-    private String description;
     private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private Integer isDeleted;
+    private List<Long> sourceChunkIds;
 }

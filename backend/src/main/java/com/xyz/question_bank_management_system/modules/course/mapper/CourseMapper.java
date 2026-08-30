@@ -14,6 +14,12 @@ public interface CourseMapper {
     @Update("UPDATE course SET course_code=#{courseCode},course_name=#{courseName},description=#{description},teacher_id=#{teacherId},status=#{status},updated_at=NOW(3) WHERE id=#{id} AND is_deleted=0")
     int update(Course course);
 
+    @Update("UPDATE course SET course_name=#{courseName},description=#{description},status=#{status},updated_at=NOW(3) WHERE id=#{id} AND is_deleted=0")
+    int updateImported(Course course);
+
+    @Update("UPDATE course SET status='active',updated_at=NOW(3) WHERE id=#{id} AND is_deleted=0")
+    int activateImported(Long id);
+
     @Update("UPDATE course SET is_deleted=1,updated_at=NOW(3) WHERE id=#{id} AND is_deleted=0")
     int softDelete(@Param("id") Long id);
 
