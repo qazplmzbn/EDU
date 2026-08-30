@@ -1,0 +1,4 @@
+SELECT 'stage18_mapping_table_missing' check_name,1-COUNT(*) problem_count FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='knowledge_point_legacy_mapping';
+SELECT 'stage18_graph_columns_missing' check_name,4-COUNT(*) problem_count FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='knowledge_graph_version' AND column_name IN('import_id','review_status','reviewed_by','reviewed_at');
+SELECT 'stage18_source_columns_missing' check_name,4-COUNT(*) problem_count FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='source_document' AND column_name IN('course_id','source_kind','review_status','import_code');
+SELECT 'stage18_orphan_mapping' check_name,COUNT(*) problem_count FROM knowledge_point_legacy_mapping m LEFT JOIN course_graph_import i ON i.id=m.import_id LEFT JOIN knowledge_point k ON k.id=m.legacy_knowledge_point_id WHERE i.id IS NULL OR k.id IS NULL;
