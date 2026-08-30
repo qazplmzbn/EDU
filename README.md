@@ -186,4 +186,16 @@ cd frontend
 npm run build
 ```
 
+## 个性化学习闭环（Stage 08–19）
+
+新增链路为：课程图版本 → 课程级画像 → 纯知识点路径 → ResourceUnit → Blueprint → 生成与五维监督 → Bundle 发布 → 隐藏题释放/生成题作答 → 幂等画像与路径决策 → 进度、资格和报告。
+
+已有数据库必须按 `backend/migrations/stage08` 至 `stage19` 的顺序执行；每阶段均执行 `precheck → schema → migrate → verify`，cleanup 默认禁止。新数据库使用更新后的 `backend/database_full_init.sql`。
+
+Neo4j 5.x 是新路径生成和 ResourceUnit 聚合的必要依赖。先执行 `backend/deploy/neo4j/constraints.cypher`，再配置 `NEO4J_ENABLED/NEO4J_URI/NEO4J_USERNAME/NEO4J_PASSWORD/NEO4J_DATABASE`。图服务不可用时只能读取已有 ACTIVE 路径，不能创建或刷新路径。
+
+DIMKT 默认关闭；模型主机安装 `model-center-service/requirements-dimkt.txt`，提供通过哈希校验的模型 manifest 和权重后再启用 `DIMKT_ENABLED`。未启用或推理失败时 Java 自动使用 `weighted_bkt_elo_v1`。
+
+Stage 17–19 增加课程图谱 JSON 校验、事务导入、人工审核与 Neo4j 发布门禁。首轮只允许提交 C语言 `STRUCTURE_ONLY` 图谱，固定结果为 12 章、51 个知识点、26 条先修边和 17 条相似边；JSON 中的教学资源暂不导入。
+
 

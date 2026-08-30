@@ -294,6 +294,11 @@ Spring Boot 后端大多数接口返回统一结构：
 | --- | --- | --- | --- | --- |
 | 学习画像 | `/api/learning/profile` | GET | STUDENT | 无 |
 | 画像报告 | `/api/learning/profile/report` | GET | STUDENT | 无 |
+| 我的基础画像 | `/api/student-profile/basic` | GET/PUT | STUDENT | 基础画像字段 |
+| 我的学习目标 | `/api/student-profile/goals` | GET/POST | STUDENT | 目标字段 |
+| 修改学习目标 | `/api/student-profile/goals/{id}` | PUT | STUDENT | 目标字段 |
+| 我的学习偏好 | `/api/student-profile/preferences` | GET/PUT | STUDENT | 偏好字段 |
+| 学生画像摘要 | `/api/student-profiles/{studentId}/summary` | GET | TEACHER/ADMIN | 路径参数 `studentId` |
 | 智能推荐 | `/api/learning/recommendations` | GET | STUDENT | 无 |
 | 学习路径推荐 | `/api/learning/path-recommendation` | GET | STUDENT | `stage`、`goal`、`days` |
 | 保存路径快照 | `/api/learning/path-recommendation/snapshots` | POST | STUDENT | `stage`、`goal`、`days`、`snapshot` |
@@ -379,6 +384,19 @@ Spring Boot 后端大多数接口返回统一结构：
 | 查询任务状态 | `/api/teacher/agent-resources/generate-tasks/{taskId}` | GET | TEACHER/ADMIN | 路径参数 `taskId` |
 | 取消任务 | `/api/teacher/agent-resources/generate-tasks/{taskId}/cancel` | POST | TEACHER/ADMIN | 路径参数 `taskId` |
 
+### 7.5 Agent 任务追溯
+
+| 功能 | 请求路径 | 方法 | 权限 | 参数 |
+| --- | --- | --- | --- | --- |
+| 任务详情 | `/api/agent-tasks/{taskCode}` | GET | TEACHER/ADMIN | 路径参数 `taskCode` |
+| 任务步骤、审核与决策 | `/api/agent-tasks/{taskCode}/trace` | GET | TEACHER/ADMIN | 路径参数 `taskCode` |
+| Agent 定义列表 | `/api/admin/agents` | GET | ADMIN | 无 |
+| 新增 Agent 定义 | `/api/admin/agents` | POST | ADMIN | `agentCode`、名称、角色、模型/模板配置 |
+| 创建 Agent 新版本 | `/api/admin/agents/{id}` | PUT | ADMIN | 名称、角色、模型/模板配置 |
+| 重加密旧模型密钥 | `/api/admin/llm/providers/reencrypt-legacy-keys` | POST | ADMIN | 无；需先设置 `APP_LLM_ENCRYPTION_KEY` |
+
+阶段六说明：教师资源生成、会诊和异步任务均以持久化 Agent 任务为追溯来源。教师只能查看自己发起的任务，管理员可查看全部；学生不能读取原始提示词、模型输出和任务证据。模型 API Key 仅以加密形式保存，所有模型接口只返回是否已配置和脱敏状态，不返回原文密钥。
+
 `TeacherAgentResourceGenerateRequest` 主要字段：`studentId`、`stage`、`startDate`、`endDate`、`resourceTypes`、`generationScope`、`classId`、`difficulty`、`exerciseCount`、`publishMode`、`selectedWeakPoints`、`selectedResourceTypes`、`providerKey`、`agentProviderKeys`、`teacherRequirement`、`feedback`。
 
 ## 8 统计、阶段评价与公开展示 API
@@ -390,7 +408,7 @@ Spring Boot 后端大多数接口返回统一结构：
 | 错题分页 | `/api/stats/wrong-questions` | GET | STUDENT | `page`、`size` 等过滤参数 |
 | 标记错题已解决 | `/api/stats/wrong-questions/{questionId}/resolve` | POST | STUDENT | 路径参数 `questionId` |
 | 掌握度 | `/api/stats/mastery` | GET | STUDENT | 无；返回知识点掌握度 |
-| 能力画像 | `/api/stats/ability` | GET | STUDENT | 无 |
+| 能力画像 | `/api/stats/ability` | GET | STUDENT | 无；兼容返回 `userId`、`abilityScore`，数据源为 `student_ability_state` |
 | 题目统计 | `/api/stats/question-stats` | GET | STUDENT | `page`、`size` 等过滤参数 |
 
 ### 8.2 阶段评价
@@ -399,6 +417,11 @@ Spring Boot 后端大多数接口返回统一结构：
 | --- | --- | --- | --- | --- |
 | 我的阶段评价 | `/api/stage-evaluations/my` | GET | STUDENT | 阶段/时间等查询参数 |
 | 教师查看学生阶段评价 | `/api/stage-evaluations/teacher/students` | GET | TEACHER/ADMIN | 学生/班级等查询参数 |
+| 生成阶段评价 | `/api/stage-evaluations` | POST | TEACHER/ADMIN | `studentId`、`stage` 或 `startDate/endDate` |
+| 我的评价历史 | `/api/stage-evaluations/my/history` | GET | STUDENT | `limit` |
+| 学生评价历史 | `/api/stage-evaluations/teacher/students/{studentId}/history` | GET | TEACHER/ADMIN | `limit` |
+
+阶段五说明：`GET /api/stage-evaluations/my` 与教师查询接口只读取已持久化的最新评价；尚未生成时返回 `generated=false`，不会在查询时写入数据。教师仅能生成或查看自己班级学生的评价，管理员可操作任意学生。每次生成均创建新的画像快照和阶段评价版本，历史结果不会覆盖。
 
 ### 8.3 公开展示与能力层同步
 
@@ -445,4 +468,99 @@ frontend/src/api/services.js
 ```text
 frontend/src/router/index.js
 ```
+
+## 11 阶段 7：课程与正式学习路径 API
+
+### 11.1 教师/管理员课程管理
+
+| 功能 | 请求路径 | 方法 | 权限 | 参数 |
+| --- | --- | --- | --- | --- |
+| 创建课程 | `/api/courses` | POST | TEACHER/ADMIN | `courseCode`、`courseName`、`description`、`status`；管理员可传 `teacherId` |
+| 修改课程 | `/api/courses/{courseId}` | PUT | TEACHER/ADMIN | 同创建；教师仅能修改自己的课程 |
+| 删除课程 | `/api/courses/{courseId}` | DELETE | TEACHER/ADMIN | 路径参数 `courseId`，逻辑删除 |
+| 可管理课程 | `/api/courses/mine` | GET | TEACHER/ADMIN | 教师返回自己的课程，管理员返回全部 |
+| 查询课程知识点 | `/api/courses/{courseId}/knowledge` | GET | TEACHER/ADMIN | 路径参数 `courseId` |
+| 替换课程知识点 | `/api/courses/{courseId}/knowledge` | PUT | TEACHER/ADMIN | `items[]`：`knowledgePointId`、`sequenceNo`、`core`、`coverageWeight` |
+| 查看学生课程进度 | `/api/courses/{courseId}/students/progress` | GET | TEACHER/ADMIN | 路径参数 `courseId` |
+| 查看学生正式路径 | `/api/courses/paths/{pathId}` | GET | TEACHER/ADMIN | 路径参数 `pathId`；教师仅能查看自己课程且属于自己班级学生的路径 |
+
+### 11.2 学生课程与路径
+
+| 功能 | 请求路径 | 方法 | 权限 | 参数 |
+| --- | --- | --- | --- | --- |
+| 可学习课程 | `/api/learning/courses` | GET | STUDENT | 仅返回所在班级授课教师创建的 `active` 课程及当前进度 |
+| 课程进度 | `/api/learning/courses/{courseId}/progress` | GET | STUDENT | 路径参数 `courseId` |
+| 生成课程路径 | `/api/learning/courses/{courseId}/paths` | POST | STUDENT | 可选 `planningDays`（1–365）、`stage`；新路径替换同课程旧活动路径 |
+| 我的正式路径 | `/api/learning/paths` | GET | STUDENT | 无 |
+| 路径详情 | `/api/learning/paths/{pathId}` | GET | STUDENT | 路径参数 `pathId` |
+| 完成路径节点 | `/api/learning/paths/{pathId}/items/{itemId}/complete` | POST | STUDENT | 幂等；首次完成记录学习行为并重算课程进度 |
+
+旧 `/api/learning/path-recommendation/snapshots/**` 保持只读历史兼容。阶段 7 新生成的正式路径写入 `learning_path` 与 `learning_path_item`；历史快照迁移路径的 `courseId` 为 `null`。
+
+## 12 阶段 7B：可信知识来源与资源溯源 API
+
+以下接口仅管理员可调用。上传文件保存为本地 `file_asset`，并自动创建来源文档、文本切片；支持 txt、md、csv、json、sql、html 和 docx，单文件不超过 5MB。
+
+| 功能 | 请求路径 | 方法 | 参数 |
+| --- | --- | --- | --- |
+| 上传可信来源文档 | `/api/admin/knowledge-sources/documents` | POST | multipart `file`；可选 `title`、`documentType`、`authorOrg`、`sourceUrl`、`version`、`authorityLevel` |
+| 来源文档列表 | `/api/admin/knowledge-sources/documents` | GET | 无 |
+| 查询文档切片 | `/api/admin/knowledge-sources/documents/{id}/chunks` | GET | 路径参数 `id` |
+| 绑定知识点证据 | `/api/admin/knowledge-sources/knowledge-points/{id}/evidence` | POST | `sourceChunkId`、`supportType`、`relevanceScore`、`confidence`、`linkMethod`、`reviewStatus` |
+| 查询知识点证据 | `/api/admin/knowledge-sources/knowledge-points/{id}/evidence` | GET | 路径参数 `id` |
+| 绑定资源证据 | `/api/admin/knowledge-sources/resources/{id}/evidence` | POST | `sourceChunkId`、`supportType`、`relevanceScore`、`citationOrder` |
+| 查询资源证据 | `/api/admin/knowledge-sources/resources/{id}/evidence` | GET | 路径参数 `id` |
+
+## 13 阶段 7C、7D：推荐反馈与学习对话 API
+
+| 功能 | 请求路径 | 方法 | 权限 | 参数 |
+| --- | --- | --- | --- | --- |
+| 刷新资源推荐记录 | `/api/learning/recommendation-records/refresh` | POST | STUDENT | 无 |
+| 我的推荐记录 | `/api/learning/recommendation-records` | GET | STUDENT | 无 |
+| 更新推荐状态 | `/api/learning/recommendation-records/{id}/status` | PUT | STUDENT | `recommended/viewed/started/completed/skipped/expired` |
+| 提交资源反馈 | `/api/learning/recommendation-records/resources/{resourceId}/feedback` | POST | STUDENT | `recommendationId`、`feedbackType`、`rating`、`feedbackValue`、`feedbackText` |
+| 学生助手聊天 | `/api/student/assistant/chat` | POST | STUDENT | 既有字段；新增可选 `sessionId` |
+| 我的对话会话 | `/api/student/assistant/sessions` | GET | STUDENT | 无 |
+| 会话消息 | `/api/student/assistant/sessions/{sessionId}/messages` | GET | STUDENT | 路径参数 `sessionId` |
+
+推荐刷新持久化薄弱知识点匹配资源和已定向投放资源；学生只能更新、反馈和读取自己的记录。助手聊天未传 `sessionId` 时自动创建会话，每轮用户消息与助手回复均持久化，且助手回复关联 LLM 调用记录。
+
+## 14 阶段 08–16：个性化学习闭环 API
+
+所有 `/api/v1` 请求返回 `X-Correlation-Id`；创建路径、资源任务、重生成和交互提交必须携带 `Idempotency-Key`。内部接口只允许 `INTERNAL_SERVICE` 或管理员调用。
+
+| 领域 | 方法 | 路径 | 核心输入/输出 |
+| --- | --- | --- | --- |
+| 课程目录 | GET | `/api/v1/courses/{courseId}/catalog` | 章节、课程知识点、ACTIVE graphVersion |
+| 图版本 | POST | `/api/v1/admin/courses/{courseId}/graph-versions` | 创建 DRAFT 图版本 |
+| 图关系 | PUT | `/api/v1/admin/graph-versions/{versionCode}/relations` | 全量覆盖草稿关系及 sourceChunkIds |
+| 图校验/发布 | POST | `/api/v1/admin/graph-versions/{versionCode}/validate`、`/publish` | 结构问题、哈希、节点/边数、状态 |
+| 画像摘要 | GET | `/api/v1/students/me/profile-summary?courseId=` | profileVersion 与课程级五维摘要 |
+| 画像工具 | GET | `/internal/v1/profiles/{userId}/courses/{courseId}/knowledge-states`、`resource-preferences`、`cognitive-profile` | Agent 使用的版本化工具证据 |
+| 路径 | POST/GET | `/api/v1/learning-path-sessions`、`/{pathCode}`、`/{pathCode}/refresh` | 仅返回知识点步骤 |
+| 资源任务 | POST/GET | `/api/v1/personalized-resources/jobs`、`/jobs/{jobCode}` | ResourceUnit → Blueprint → 生成/监督状态 |
+| 资源详情 | GET | `/api/v1/personalized-resources/{bundleCode}` | 学生仅获得 VISIBLE 项，永不返回 grading key |
+| 重生成 | POST | `/api/v1/personalized-resources/{bundleCode}/regenerate` | 新 bundle version，不覆盖旧版本 |
+| 隐藏题释放 | POST | `/internal/v1/personalized-resources/{bundleCode}/hidden-assessments/{itemCode}/release` | userId、expiresAt |
+| 当前检测题 | GET | `/api/v1/personalized-resources/{bundleCode}/assessments/active` | 只返回已释放题目，不返回答案 |
+| 最终交互 | POST | `/api/v1/resource-interactions` | generatedQuestionCode、answer、actionOrigin、clientOccurredAt |
+| 交互结果 | GET | `/api/v1/resource-interactions/{interactionCode}/result` | 判分、profileVersion、resourceAction |
+| 课程结果 | GET | `/api/v1/courses/{courseId}/progress`、`/api/v1/training-goals/{goalId}/exam-eligibility`、`/api/v1/students/me/learning-report` | 进度、资格快照、可审计报告 |
+
+模型中心新增 `/internal/v1/dimkt/infer`、`/recalibrate` 和 `/models/{version}/health`。DIMKT 未通过模型清单、知识索引和权重哈希校验时返回不可用，Java 自动回退 `weighted_bkt_elo_v1`。
+
+## 15 阶段 17–19：课程图谱导入与发布
+
+以下接口仅允许管理员调用。首轮 commit 只接受 `course_id=C`、`course=C语言`、`schema_version=3.0` 和 `mode=STRUCTURE_ONLY`；其他课程图可校验但不能提交。JSON 内教学资源不导入。
+
+| 功能 | 方法 | 路径 | 核心输入/输出 |
+| --- | --- | --- | --- |
+| 校验课程图谱 | POST | `/api/v1/admin/course-graph-imports/validate` | multipart `file`、`mode`；返回计数、ERROR/WARNING 和三类 hash，不落库 |
+| 提交课程图谱 | POST | `/api/v1/admin/course-graph-imports` | Header `Idempotency-Key`；multipart `file`、`validationHash`、`mode` |
+| 查询导入详情 | GET | `/api/v1/admin/course-graph-imports/{importCode}` | 状态、计数、hash、issue、legacy mapping、courseId、graphVersionCode |
+| 审核导入 | POST | `/api/v1/admin/course-graph-imports/{importCode}/approve` | 仅无未解决 ERROR 的 IMPORTED 记录可通过；重复审核幂等 |
+
+提交时服务端重新解析文件并计算 validationHash。hash 不一致返回冲突且不落库；校验存在 ERROR 时保存 REJECTED 导入和 issue，但不写课程域数据。有效 C 语言导入固定生成 12 章、51 个 ACTIVE 知识点、26 条 PREREQUISITE、17 条 SIMILAR 和 43 条关系来源证据。
+
+Imported graph 在导入状态变为 APPROVED 前不能调用图校验或发布。图发布只同步 ACTIVE 且 `metadata.pathEligible=true` 的节点；C 语言 Neo4j 验收计数固定为 51 节点、43 边。
 

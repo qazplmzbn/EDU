@@ -106,18 +106,23 @@ CREATE TABLE IF NOT EXISTS skill (
 
 CREATE TABLE IF NOT EXISTS knowledge_point (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  course_id BIGINT UNSIGNED NULL,
+  chapter_id BIGINT UNSIGNED NULL,
   name VARCHAR(150) NOT NULL,
   code VARCHAR(100) NULL,
   parent_id BIGINT UNSIGNED NULL,
   level INT NOT NULL DEFAULT 1,
   knowledge_type VARCHAR(32) NOT NULL DEFAULT 'concept',
+  status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',
+  content_version VARCHAR(64) NULL,
+  metadata_json JSON NULL,
   difficulty TINYINT NOT NULL DEFAULT 3,
   description VARCHAR(2000) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   is_deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_knowledge_point_code (code),
+  UNIQUE KEY uk_knowledge_point_course_code (course_id, code),
   KEY idx_knowledge_point_parent (parent_id, is_deleted, id),
   KEY idx_knowledge_point_list (is_deleted, updated_at, id),
   CONSTRAINT ck_knowledge_point_level CHECK (level >= 1),
@@ -177,12 +182,20 @@ CREATE TABLE IF NOT EXISTS skill_knowledge (
 
 CREATE TABLE IF NOT EXISTS knowledge_relation (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  course_id BIGINT UNSIGNED NULL,
+  graph_version_id BIGINT UNSIGNED NULL,
+  relation_code VARCHAR(64) NULL,
+  source_knowledge_point_id BIGINT UNSIGNED NULL,
+  target_knowledge_point_id BIGINT UNSIGNED NULL,
   source_id BIGINT UNSIGNED NOT NULL,
   target_id BIGINT UNSIGNED NOT NULL,
   relation_type VARCHAR(40) NOT NULL DEFAULT 'prerequisite',
   weight DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
   confidence DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
   source_type VARCHAR(40) NOT NULL DEFAULT 'manual',
+  status VARCHAR(24) NOT NULL DEFAULT 'DRAFT',
+  published_at DATETIME(3) NULL,
+  created_by BIGINT UNSIGNED NULL,
   description VARCHAR(1000) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -568,6 +581,7 @@ CREATE TABLE IF NOT EXISTS qb_wrong_question (
 CREATE TABLE IF NOT EXISTS student_knowledge_state (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
+  course_id BIGINT UNSIGNED NULL,
   knowledge_point_id BIGINT UNSIGNED NOT NULL,
   mastery_value DECIMAL(6,4) NOT NULL DEFAULT 0.0000,
   mastery_level VARCHAR(24) NULL,
@@ -575,10 +589,15 @@ CREATE TABLE IF NOT EXISTS student_knowledge_state (
   evidence_count INT NOT NULL DEFAULT 0,
   correct_count INT NOT NULL DEFAULT 0,
   attempt_count INT NOT NULL DEFAULT 0,
+  state_version BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  calculation_method VARCHAR(64) NOT NULL DEFAULT 'LEGACY_RATIO',
+  algorithm_version VARCHAR(64) NOT NULL DEFAULT 'legacy_v1',
+  last_interaction_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  last_interaction_id BIGINT UNSIGNED NULL,
   last_evidence_at DATETIME(3) NULL,
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
-  UNIQUE KEY uk_student_knowledge_state (user_id, knowledge_point_id),
+  UNIQUE KEY uk_student_knowledge_state (user_id, course_id, knowledge_point_id),
   KEY idx_student_knowledge_state_point (knowledge_point_id, user_id),
   CONSTRAINT ck_student_knowledge_mastery CHECK (mastery_value BETWEEN 0 AND 1),
   CONSTRAINT ck_student_knowledge_confidence CHECK (confidence BETWEEN 0 AND 1),
@@ -654,9 +673,9 @@ CREATE TABLE IF NOT EXISTS student_profile_summary (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS student_profile_snapshot (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, user_id BIGINT UNSIGNED NOT NULL, basic_state_json LONGTEXT NULL,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, user_id BIGINT UNSIGNED NOT NULL, course_id BIGINT UNSIGNED NULL, profile_version BIGINT UNSIGNED NULL, calculated_at DATETIME(3) NULL, algorithm_version VARCHAR(64) NULL, correlation_id VARCHAR(64) NULL, basic_state_json LONGTEXT NULL,
   knowledge_state_json LONGTEXT NULL, skill_state_json LONGTEXT NULL, ability_state_json LONGTEXT NULL, preference_state_json LONGTEXT NULL,
-  goal_state_json LONGTEXT NULL, category_stat_json LONGTEXT NULL, profile_summary VARCHAR(2000) NULL,
+  goal_state_json LONGTEXT NULL, category_stat_json LONGTEXT NULL, resource_preference_json JSON NULL, cognitive_profile_json JSON NULL, initiative_json JSON NULL, regularity_json JSON NULL, profile_summary VARCHAR(2000) NULL,
   trigger_type VARCHAR(32) NOT NULL DEFAULT 'scheduled', trigger_id BIGINT UNSIGNED NULL, evidence_count INT NOT NULL DEFAULT 0,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id), KEY idx_student_profile_snapshot_user_time(user_id,created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -707,6 +726,29 @@ CREATE TABLE IF NOT EXISTS qb_learning_resource (
   KEY idx_resource_created_by (created_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS qb_learning_resource_target (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  resource_id BIGINT UNSIGNED NOT NULL,
+  target_type VARCHAR(16) NOT NULL,
+  student_id BIGINT UNSIGNED NULL,
+  class_id BIGINT UNSIGNED NULL,
+  created_by BIGINT UNSIGNED NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_resource_target_student (resource_id, target_type, student_id),
+  UNIQUE KEY uk_resource_target_class (resource_id, target_type, class_id),
+  KEY idx_resource_target_student (student_id, resource_id),
+  KEY idx_resource_target_class (class_id, resource_id),
+  CONSTRAINT ck_resource_target_scope CHECK (
+    (target_type = 'student' AND student_id IS NOT NULL AND class_id IS NULL)
+    OR (target_type = 'class' AND class_id IS NOT NULL AND student_id IS NULL)
+  ),
+  CONSTRAINT fk_resource_target_resource FOREIGN KEY (resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_resource_target_student FOREIGN KEY (student_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_resource_target_class FOREIGN KEY (class_id) REFERENCES qb_class(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_resource_target_creator FOREIGN KEY (created_by) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS qb_learning_behavior (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -725,7 +767,8 @@ CREATE TABLE IF NOT EXISTS qb_learning_behavior (
 
 CREATE TABLE IF NOT EXISTS resource_knowledge (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  resource_id BIGINT UNSIGNED NOT NULL,
+  resource_id BIGINT UNSIGNED NULL,
+  resource_item_id BIGINT UNSIGNED NULL,
   knowledge_point_id BIGINT UNSIGNED NOT NULL,
   relation_type VARCHAR(24) NOT NULL DEFAULT 'cover',
   coverage_weight DECIMAL(6,4) NOT NULL DEFAULT 1.0000,
@@ -733,6 +776,7 @@ CREATE TABLE IF NOT EXISTS resource_knowledge (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   UNIQUE KEY uk_resource_knowledge (resource_id, knowledge_point_id, relation_type),
+  UNIQUE KEY uk_resource_item_knowledge (resource_item_id, knowledge_point_id, relation_type),
   KEY idx_resource_knowledge_point (knowledge_point_id, resource_id),
   CONSTRAINT ck_resource_knowledge_weight CHECK (coverage_weight BETWEEN 0 AND 1),
   CONSTRAINT fk_resource_knowledge_resource FOREIGN KEY (resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -799,14 +843,107 @@ CREATE TABLE IF NOT EXISTS student_course_progress (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS learning_path (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, user_id BIGINT UNSIGNED NOT NULL, course_id BIGINT UNSIGNED NULL, goal_id BIGINT UNSIGNED NULL, target_occupation_id BIGINT UNSIGNED NULL, profile_snapshot_id BIGINT UNSIGNED NULL, title VARCHAR(255) NOT NULL, stage VARCHAR(32) NULL, planning_days INT NOT NULL DEFAULT 14, version BIGINT UNSIGNED NOT NULL DEFAULT 1, status VARCHAR(24) NOT NULL DEFAULT 'active', summary_text VARCHAR(2000) NULL, generated_by_agent_task_id BIGINT UNSIGNED NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3), is_deleted TINYINT NOT NULL DEFAULT 0,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, path_code VARCHAR(64) NULL, user_id BIGINT UNSIGNED NOT NULL, course_id BIGINT UNSIGNED NULL, target_knowledge_point_id BIGINT UNSIGNED NULL, current_version BIGINT UNSIGNED NULL, idempotency_key VARCHAR(128) NULL, goal_id BIGINT UNSIGNED NULL, target_occupation_id BIGINT UNSIGNED NULL, profile_snapshot_id BIGINT UNSIGNED NULL, title VARCHAR(255) NOT NULL, stage VARCHAR(32) NULL, planning_days INT NOT NULL DEFAULT 14, version BIGINT UNSIGNED NOT NULL DEFAULT 1, status VARCHAR(24) NOT NULL DEFAULT 'active', summary_text VARCHAR(2000) NULL, generated_by_agent_task_id BIGINT UNSIGNED NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3), is_deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY(id), KEY idx_learning_path_user_course_status(user_id,course_id,status,is_deleted), KEY idx_learning_path_course_status(course_id,status,updated_at), CONSTRAINT fk_learning_path_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_course FOREIGN KEY(course_id) REFERENCES course(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_profile_snapshot FOREIGN KEY(profile_snapshot_id) REFERENCES student_profile_snapshot(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS learning_path_item (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, path_id BIGINT UNSIGNED NOT NULL, order_no INT NOT NULL DEFAULT 0, item_type VARCHAR(24) NOT NULL, knowledge_point_id BIGINT UNSIGNED NULL, resource_id BIGINT UNSIGNED NULL, question_id BIGINT UNSIGNED NULL, assignment_id BIGINT UNSIGNED NULL, planned_start_at DATETIME(3) NULL, planned_end_at DATETIME(3) NULL, status VARCHAR(24) NOT NULL DEFAULT 'pending', decision_reason VARCHAR(2000) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, path_id BIGINT UNSIGNED NOT NULL, path_version_id BIGINT UNSIGNED NULL, path_step_code VARCHAR(64) NULL, order_no INT NOT NULL DEFAULT 0, item_type VARCHAR(24) NULL, knowledge_point_id BIGINT UNSIGNED NULL, resource_id BIGINT UNSIGNED NULL, question_id BIGINT UNSIGNED NULL, assignment_id BIGINT UNSIGNED NULL, stage VARCHAR(24) NULL, reason_code VARCHAR(64) NULL, mastery_before DECIMAL(6,4) NULL, confidence_before DECIMAL(6,4) NULL, completed_at DATETIME(3) NULL, planned_start_at DATETIME(3) NULL, planned_end_at DATETIME(3) NULL, status VARCHAR(24) NOT NULL DEFAULT 'pending', decision_reason VARCHAR(2000) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY(id), UNIQUE KEY uk_learning_path_item_order(path_id,order_no), KEY idx_learning_path_item_knowledge(knowledge_point_id,status), KEY idx_learning_path_item_resource(resource_id,status), CONSTRAINT fk_learning_path_item_path FOREIGN KEY(path_id) REFERENCES learning_path(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_knowledge FOREIGN KEY(knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_resource FOREIGN KEY(resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_question FOREIGN KEY(question_id) REFERENCES qb_question(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_assignment FOREIGN KEY(assignment_id) REFERENCES qb_assignment(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Stage 08-16 personalized learning loop baseline.
+CREATE TABLE IF NOT EXISTS course_chapter(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,course_id BIGINT UNSIGNED NOT NULL,chapter_code VARCHAR(64) NOT NULL,chapter_name VARCHAR(255) NOT NULL,order_no INT NOT NULL,status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE',created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_course_chapter_code(course_id,chapter_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_graph_version(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,version_code VARCHAR(64) NOT NULL,course_id BIGINT UNSIGNED NOT NULL,description VARCHAR(500) NULL,status VARCHAR(24) NOT NULL,node_count INT NOT NULL DEFAULT 0,edge_count INT NOT NULL DEFAULT 0,content_hash CHAR(64) NULL,validation_report_json JSON NULL,correlation_id VARCHAR(64) NULL,created_by BIGINT UNSIGNED NULL,activated_at DATETIME(3) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_graph_version_code(version_code),KEY idx_graph_version_course_status(course_id,status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_graph_sync_record(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,graph_version_id BIGINT UNSIGNED NOT NULL,sync_code VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,node_count INT NULL,edge_count INT NULL,content_hash CHAR(64) NULL,error_message VARCHAR(1000) NULL,correlation_id VARCHAR(64) NULL,started_at DATETIME(3) NULL,finished_at DATETIME(3) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_graph_sync_code(sync_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_relation_source(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,relation_id BIGINT UNSIGNED NOT NULL,source_chunk_id BIGINT UNSIGNED NOT NULL,evidence_type VARCHAR(32) NOT NULL,citation_text VARCHAR(1000) NULL,confidence DECIMAL(6,4) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_relation_source(relation_id,source_chunk_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS student_resource_preference(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,resource_type VARCHAR(32) NOT NULL,score DECIMAL(6,4) NOT NULL,confidence DECIMAL(6,4) NOT NULL,evidence_count INT NOT NULL DEFAULT 0,calculated_at DATETIME(3) NOT NULL,algorithm_version VARCHAR(64) NOT NULL,PRIMARY KEY(id),UNIQUE KEY uk_resource_preference(user_id,course_id,resource_type)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS student_cognitive_state(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,cognitive_level VARCHAR(24) NOT NULL,score DECIMAL(6,4) NOT NULL,confidence DECIMAL(6,4) NOT NULL,evidence_count INT NOT NULL DEFAULT 0,calculated_at DATETIME(3) NOT NULL,algorithm_version VARCHAR(64) NOT NULL,PRIMARY KEY(id),UNIQUE KEY uk_cognitive_state(user_id,course_id,cognitive_level)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS student_behavior_metric(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,metric_group VARCHAR(32) NOT NULL,metric_code VARCHAR(64) NOT NULL,value DECIMAL(10,4) NOT NULL,confidence DECIMAL(6,4) NOT NULL,evidence_count INT NOT NULL DEFAULT 0,calculated_at DATETIME(3) NOT NULL,algorithm_version VARCHAR(64) NOT NULL,PRIMARY KEY(id),UNIQUE KEY uk_behavior_metric(user_id,course_id,metric_group,metric_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_state_update_log(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,knowledge_point_id BIGINT UNSIGNED NOT NULL,interaction_id BIGINT UNSIGNED NOT NULL,evidence_scope VARCHAR(16) NOT NULL,previous_mastery DECIMAL(6,4) NOT NULL,new_mastery DECIMAL(6,4) NOT NULL,previous_confidence DECIMAL(6,4) NOT NULL,new_confidence DECIMAL(6,4) NOT NULL,model_version VARCHAR(64) NOT NULL,profile_version_before BIGINT UNSIGNED NOT NULL,profile_version_after BIGINT UNSIGNED NOT NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_state_update_interaction(interaction_id,knowledge_point_id,evidence_scope)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS learning_path_version(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,path_id BIGINT UNSIGNED NOT NULL,version BIGINT UNSIGNED NOT NULL,path_mode VARCHAR(32) NOT NULL,based_on_profile_version BIGINT UNSIGNED NOT NULL,graph_version VARCHAR(64) NOT NULL,policy_version VARCHAR(64) NOT NULL,model_version VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,change_reason VARCHAR(64) NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_path_version(path_id,version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS learning_path_progress(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,path_id BIGINT UNSIGNED NOT NULL,last_processed_interaction_seq BIGINT UNSIGNED NOT NULL DEFAULT 0,last_processed_interaction_id BIGINT UNSIGNED NULL,consecutive_wrong_count INT NOT NULL DEFAULT 0,window_attempt_count INT NOT NULL DEFAULT 0,window_mastery_start DECIMAL(6,4) NULL,updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_path_progress(path_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS path_update_log(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,path_id BIGINT UNSIGNED NOT NULL,old_version BIGINT UNSIGNED NULL,new_version BIGINT UNSIGNED NOT NULL,trigger_event_types_json JSON NOT NULL,trigger_interaction_ids_json JSON NOT NULL,affected_knowledge_point_ids_json JSON NOT NULL,added_step_ids_json JSON NOT NULL,removed_step_ids_json JSON NOT NULL,retained_step_ids_json JSON NOT NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_unit(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,resource_unit_code VARCHAR(64) NOT NULL,course_id BIGINT UNSIGNED NOT NULL,path_id BIGINT UNSIGNED NOT NULL,path_version_id BIGINT UNSIGNED NOT NULL,status VARCHAR(24) NOT NULL,aggregation_evidence_json JSON NOT NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_resource_unit_code(resource_unit_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_unit_step(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,resource_unit_id BIGINT UNSIGNED NOT NULL,path_step_id BIGINT UNSIGNED NOT NULL,order_no INT NOT NULL,PRIMARY KEY(id),UNIQUE KEY uk_unit_step_version(path_step_id),UNIQUE KEY uk_unit_order(resource_unit_id,order_no)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_blueprint(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,blueprint_code VARCHAR(64) NOT NULL,resource_unit_id BIGINT UNSIGNED NOT NULL,profile_version_used BIGINT UNSIGNED NOT NULL,policy_version VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,resource_plan_json JSON NOT NULL,learning_question_plan_json JSON NOT NULL,hidden_assessment_plan_json JSON NOT NULL,profile_evidence_json JSON NOT NULL,graph_evidence_json JSON NOT NULL,capability_snapshot_json JSON NOT NULL,schema_version VARCHAR(64) NOT NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_blueprint_code(blueprint_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_generation_job(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,job_code VARCHAR(64) NOT NULL,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,path_version_id BIGINT UNSIGNED NOT NULL,resource_unit_id BIGINT UNSIGNED NULL,blueprint_id BIGINT UNSIGNED NULL,generation_policy_version VARCHAR(64) NOT NULL,idempotency_key VARCHAR(128) NOT NULL,status VARCHAR(24) NOT NULL,retry_count INT NOT NULL DEFAULT 0,max_revision_rounds INT NOT NULL DEFAULT 5,input_snapshot_json JSON NULL,error_code VARCHAR(64) NULL,error_message VARCHAR(1000) NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),started_at DATETIME(3) NULL,finished_at DATETIME(3) NULL,PRIMARY KEY(id),UNIQUE KEY uk_resource_job_code(job_code),UNIQUE KEY uk_resource_job_idempotency(user_id,idempotency_key)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_bundle(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,bundle_code VARCHAR(64) NOT NULL,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,resource_unit_id BIGINT UNSIGNED NOT NULL,blueprint_id BIGINT UNSIGNED NOT NULL,version BIGINT UNSIGNED NOT NULL,status VARCHAR(24) NOT NULL,profile_version_used BIGINT UNSIGNED NOT NULL,graph_version VARCHAR(64) NOT NULL,policy_version VARCHAR(64) NOT NULL,content_hash CHAR(64) NULL,published_at DATETIME(3) NULL,stale_reason VARCHAR(255) NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_bundle_code(bundle_code),UNIQUE KEY uk_bundle_version(resource_unit_id,version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_item(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,bundle_id BIGINT UNSIGNED NOT NULL,item_code VARCHAR(64) NOT NULL,generated_question_code VARCHAR(64) NULL,item_type VARCHAR(32) NOT NULL,purpose VARCHAR(32) NOT NULL,visibility VARCHAR(32) NOT NULL,title VARCHAR(500) NOT NULL,content_json JSON NOT NULL,question_difficulty DECIMAL(6,4) NULL,cognitive_level VARCHAR(24) NULL,grading_key_json JSON NULL,order_no INT NOT NULL,status VARCHAR(24) NOT NULL,normalized_text_hash CHAR(64) NULL,simhash64 BIGINT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_resource_item_code(bundle_id,item_code),UNIQUE KEY uk_generated_question_code(generated_question_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_review(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,job_id BIGINT UNSIGNED NOT NULL,bundle_id BIGINT UNSIGNED NULL,blueprint_id BIGINT UNSIGNED NOT NULL,expert_role VARCHAR(64) NOT NULL,result VARCHAR(16) NOT NULL,issue_type VARCHAR(64) NULL,location VARCHAR(255) NULL,description VARCHAR(1000) NULL,repair_target VARCHAR(64) NULL,repair_scope VARCHAR(255) NULL,repair_action VARCHAR(255) NULL,repair_instruction VARCHAR(2000) NULL,critical TINYINT NOT NULL DEFAULT 0,round_no INT NOT NULL,report_json JSON NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_assessment_release(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,release_code VARCHAR(64) NOT NULL,user_id BIGINT UNSIGNED NOT NULL,bundle_id BIGINT UNSIGNED NOT NULL,resource_item_id BIGINT UNSIGNED NOT NULL,status VARCHAR(24) NOT NULL,released_at DATETIME(3) NOT NULL,expires_at DATETIME(3) NULL,consumed_at DATETIME(3) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_assessment_release_code(release_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_interaction(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,interaction_code VARCHAR(64) NOT NULL,interaction_seq BIGINT UNSIGNED NOT NULL,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,resource_bundle_id BIGINT UNSIGNED NOT NULL,resource_version BIGINT UNSIGNED NOT NULL,resource_unit_id BIGINT UNSIGNED NOT NULL,resource_item_id BIGINT UNSIGNED NOT NULL,generated_question_code VARCHAR(64) NOT NULL,question_purpose VARCHAR(32) NOT NULL,visibility VARCHAR(32) NOT NULL,question_difficulty DECIMAL(6,4) NOT NULL,primary_knowledge_point_id BIGINT UNSIGNED NOT NULL,knowledge_point_weights_json JSON NOT NULL,score_normalized DECIMAL(6,4) NOT NULL,correct TINYINT NOT NULL,status VARCHAR(24) NOT NULL,action_origin VARCHAR(32) NOT NULL,grading_version VARCHAR(64) NOT NULL,answer_json JSON NOT NULL,request_id VARCHAR(128) NOT NULL,correlation_id VARCHAR(64) NOT NULL,client_occurred_at DATETIME(3) NULL,submitted_at DATETIME(3) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_interaction_code(interaction_code),UNIQUE KEY uk_interaction_request(request_id),UNIQUE KEY uk_interaction_seq(user_id,course_id,interaction_seq)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS profile_evidence_event(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,event_id VARCHAR(64) NOT NULL,interaction_id BIGINT UNSIGNED NOT NULL,consumer_name VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,retry_count INT NOT NULL DEFAULT 0,processed_at DATETIME(3) NULL,error_message VARCHAR(1000) NULL,PRIMARY KEY(id),UNIQUE KEY uk_profile_evidence_consumer(event_id,consumer_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS outbox_event(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,event_id VARCHAR(64) NOT NULL,aggregate_type VARCHAR(64) NOT NULL,aggregate_id BIGINT UNSIGNED NOT NULL,event_type VARCHAR(128) NOT NULL,payload_json JSON NOT NULL,status VARCHAR(24) NOT NULL,retry_count INT NOT NULL DEFAULT 0,next_retry_at DATETIME(3) NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),published_at DATETIME(3) NULL,PRIMARY KEY(id),UNIQUE KEY uk_outbox_event(event_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_action_decision(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,path_id BIGINT UNSIGNED NOT NULL,path_version BIGINT UNSIGNED NOT NULL,interaction_id BIGINT UNSIGNED NOT NULL,action VARCHAR(24) NOT NULL,reason VARCHAR(64) NOT NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_resource_decision_interaction(interaction_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS exam_eligibility_snapshot(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,snapshot_code VARCHAR(64) NOT NULL,user_id BIGINT UNSIGNED NOT NULL,goal_id BIGINT UNSIGNED NOT NULL,eligible TINYINT NOT NULL,course_versions_json JSON NOT NULL,profile_versions_json JSON NOT NULL,rule_version VARCHAR(64) NOT NULL,result_json JSON NOT NULL,correlation_id VARCHAR(64) NOT NULL,calculated_at DATETIME(3) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_eligibility_snapshot_code(snapshot_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS student_knowledge_model_state(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,model_version VARCHAR(64) NOT NULL,knowledge_index_version VARCHAR(64) NOT NULL,state_ref VARCHAR(255) NOT NULL,processed_through_seq BIGINT UNSIGNED NOT NULL,status VARCHAR(24) NOT NULL,updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_student_model_state(user_id,course_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS profile_algorithm_policy(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,policy_version VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,learning_rate DECIMAL(6,4) NOT NULL,learning_practice_weight DECIMAL(6,4) NOT NULL,hidden_assessment_weight DECIMAL(6,4) NOT NULL,confidence_scale DECIMAL(8,4) NOT NULL,dimkt_enabled TINYINT NOT NULL DEFAULT 0,config_json JSON NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_profile_policy_version(policy_version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS path_policy(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,policy_version VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,mastery_threshold DECIMAL(6,4) NOT NULL,confidence_threshold DECIMAL(6,4) NOT NULL,max_path_length INT NOT NULL,max_neighbor_hops INT NOT NULL,config_json JSON NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_path_policy(policy_version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS course_resource_capability(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,course_id BIGINT UNSIGNED NOT NULL,resource_type VARCHAR(32) NOT NULL,enabled TINYINT NOT NULL DEFAULT 1,config_json JSON NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_course_resource_capability(course_id,resource_type)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_generation_policy(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,policy_version VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,max_unit_knowledge_points INT NOT NULL DEFAULT 5,max_revision_rounds INT NOT NULL DEFAULT 5,question_similarity_threshold DECIMAL(6,4) NOT NULL DEFAULT 0.7200,config_json JSON NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_resource_policy(policy_version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS training_goal_course_requirement(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,goal_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,required TINYINT NOT NULL DEFAULT 1,rule_version VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_goal_course_requirement(goal_id,course_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS course_completion_policy(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,course_id BIGINT UNSIGNED NOT NULL,rule_version VARCHAR(64) NOT NULL,mastery_threshold DECIMAL(6,4) NOT NULL,confidence_threshold DECIMAL(6,4) NOT NULL,required_completion_rate DECIMAL(6,4) NOT NULL,status VARCHAR(24) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_course_completion_policy(course_id,rule_version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_model_rollout_policy(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,course_id BIGINT UNSIGNED NULL,model_version VARCHAR(64) NOT NULL,knowledge_index_version VARCHAR(64) NOT NULL,rollout_percent DECIMAL(6,4) NOT NULL DEFAULT 0,enabled TINYINT NOT NULL DEFAULT 0,fallback_algorithm VARCHAR(64) NOT NULL,config_json JSON NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_model_rollout(course_id,model_version)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO profile_algorithm_policy(policy_version,status,learning_rate,learning_practice_weight,hidden_assessment_weight,confidence_scale,dimkt_enabled,config_json) VALUES('weighted_bkt_elo_v1','ACTIVE',0.2000,0.7000,1.0000,5.0000,0,JSON_OBJECT());
+INSERT IGNORE INTO path_policy(policy_version,status,mastery_threshold,confidence_threshold,max_path_length,max_neighbor_hops,config_json) VALUES('path_policy_v1','ACTIVE',0.8000,0.6000,50,2,JSON_OBJECT());
+INSERT IGNORE INTO resource_generation_policy(policy_version,status,max_unit_knowledge_points,max_revision_rounds,question_similarity_threshold,config_json) VALUES('resource_policy_v1','ACTIVE',5,5,0.7200,JSON_OBJECT());
+INSERT IGNORE INTO course_resource_capability(course_id,resource_type,enabled) SELECT id,'concept_explanation',1 FROM course WHERE is_deleted=0;
+INSERT IGNORE INTO course_resource_capability(course_id,resource_type,enabled) SELECT id,'worked_example',1 FROM course WHERE is_deleted=0;
+INSERT IGNORE INTO course_resource_capability(course_id,resource_type,enabled) SELECT id,'guided_practice',1 FROM course WHERE is_deleted=0;
+
+-- Stage 17-19 course graph import baseline.
+CREATE TABLE IF NOT EXISTS file_asset (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,biz_type VARCHAR(40) NULL,biz_id BIGINT UNSIGNED NULL,file_name VARCHAR(255) NOT NULL,file_ext VARCHAR(32) NULL,mime_type VARCHAR(128) NULL,storage_type VARCHAR(24) NOT NULL DEFAULT 'local',storage_path VARCHAR(1000) NOT NULL,file_size BIGINT UNSIGNED NULL,file_hash VARCHAR(128) NULL,uploaded_by BIGINT UNSIGNED NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),is_deleted TINYINT NOT NULL DEFAULT 0,
+ PRIMARY KEY(id),KEY idx_file_asset_biz(biz_type,biz_id,is_deleted),KEY idx_file_asset_hash(file_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS source_document (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,course_id BIGINT UNSIGNED NULL,title VARCHAR(500) NOT NULL,document_type VARCHAR(40) NOT NULL DEFAULT 'document',source_kind VARCHAR(40) NULL,review_status VARCHAR(24) NULL,import_code VARCHAR(64) NULL,author_org VARCHAR(255) NULL,source_url VARCHAR(1000) NULL,file_asset_id BIGINT UNSIGNED NULL,version VARCHAR(64) NULL,published_at DATETIME(3) NULL,authority_level TINYINT NOT NULL DEFAULT 3,content_hash VARCHAR(128) NULL,parse_status VARCHAR(24) NOT NULL DEFAULT 'pending',created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),is_deleted TINYINT NOT NULL DEFAULT 0,
+ PRIMARY KEY(id),KEY idx_source_document_status(parse_status,authority_level,created_at),KEY idx_source_document_hash(content_hash),KEY idx_source_import_review(import_code,review_status,course_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS source_chunk (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,document_id BIGINT UNSIGNED NOT NULL,chunk_index INT NOT NULL DEFAULT 0,section_title VARCHAR(500) NULL,page_start INT NULL,page_end INT NULL,content LONGTEXT NOT NULL,content_hash VARCHAR(128) NULL,token_count INT NULL,vector_ref VARCHAR(255) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_source_chunk_document_index(document_id,chunk_index),KEY idx_source_chunk_hash(content_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_source (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,knowledge_point_id BIGINT UNSIGNED NOT NULL,source_chunk_id BIGINT UNSIGNED NOT NULL,support_type VARCHAR(24) NOT NULL DEFAULT 'support',relevance_score DECIMAL(6,4) NULL,confidence DECIMAL(6,4) NOT NULL DEFAULT 1.0000,link_method VARCHAR(32) NOT NULL DEFAULT 'manual',review_status VARCHAR(24) NOT NULL DEFAULT 'pending',reviewed_by BIGINT UNSIGNED NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_knowledge_source(knowledge_point_id,source_chunk_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS resource_source (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,resource_id BIGINT UNSIGNED NOT NULL,source_chunk_id BIGINT UNSIGNED NOT NULL,support_type VARCHAR(24) NOT NULL DEFAULT 'grounding',relevance_score DECIMAL(6,4) NULL,citation_order INT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_resource_source(resource_id,source_chunk_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS course_graph_import(
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,import_code VARCHAR(64) NOT NULL,idempotency_key VARCHAR(128) NOT NULL,course_code VARCHAR(64) NOT NULL,course_name VARCHAR(255) NOT NULL,schema_version VARCHAR(32) NOT NULL,mode VARCHAR(32) NOT NULL,source_file_name VARCHAR(255) NOT NULL,source_file_hash CHAR(64) NOT NULL,normalized_hash CHAR(64) NOT NULL,validation_hash CHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,course_id BIGINT UNSIGNED NULL,graph_version_id BIGINT UNSIGNED NULL,node_count INT NOT NULL DEFAULT 0,module_count INT NOT NULL DEFAULT 0,category_count INT NOT NULL DEFAULT 0,knowledge_point_count INT NOT NULL DEFAULT 0,contains_count INT NOT NULL DEFAULT 0,prerequisite_count INT NOT NULL DEFAULT 0,similar_count INT NOT NULL DEFAULT 0,error_count INT NOT NULL DEFAULT 0,warning_count INT NOT NULL DEFAULT 0,created_by BIGINT UNSIGNED NOT NULL,reviewed_by BIGINT UNSIGNED NULL,reviewed_at DATETIME(3) NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_course_graph_import_code(import_code),UNIQUE KEY uk_course_graph_source(course_code,source_file_hash,schema_version),UNIQUE KEY uk_course_graph_idempotency(created_by,idempotency_key),KEY idx_course_graph_status(status,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS course_graph_import_issue(
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,import_id BIGINT UNSIGNED NOT NULL,severity VARCHAR(16) NOT NULL,issue_code VARCHAR(64) NOT NULL,location_type VARCHAR(24) NOT NULL,location_code VARCHAR(255) NULL,message VARCHAR(1000) NOT NULL,resolved TINYINT NOT NULL DEFAULT 0,resolved_by BIGINT UNSIGNED NULL,resolved_at DATETIME(3) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),KEY idx_course_graph_issue(import_id,severity,resolved)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS knowledge_point_legacy_mapping(
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,import_id BIGINT UNSIGNED NOT NULL,legacy_knowledge_point_id BIGINT UNSIGNED NOT NULL,target_type VARCHAR(24) NOT NULL,target_external_code VARCHAR(64) NULL,mapping_type VARCHAR(32) NOT NULL,confidence DECIMAL(6,4) NOT NULL,review_status VARCHAR(24) NOT NULL,notes VARCHAR(1000) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_legacy_mapping(import_id,legacy_knowledge_point_id,target_type,target_external_code),KEY idx_legacy_mapping_point(legacy_knowledge_point_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP PROCEDURE IF EXISTS full_init_add_column;
+DELIMITER $$
+CREATE PROCEDURE full_init_add_column(IN t VARCHAR(64),IN c VARCHAR(64),IN d TEXT) BEGIN IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=t AND column_name=c) THEN SET @x=d;PREPARE s FROM @x;EXECUTE s;DEALLOCATE PREPARE s;END IF;END$$
+DELIMITER ;
+CALL full_init_add_column('knowledge_graph_version','import_id','ALTER TABLE knowledge_graph_version ADD COLUMN import_id BIGINT UNSIGNED NULL');
+CALL full_init_add_column('knowledge_graph_version','review_status','ALTER TABLE knowledge_graph_version ADD COLUMN review_status VARCHAR(24) NULL');
+CALL full_init_add_column('knowledge_graph_version','reviewed_by','ALTER TABLE knowledge_graph_version ADD COLUMN reviewed_by BIGINT UNSIGNED NULL');
+CALL full_init_add_column('knowledge_graph_version','reviewed_at','ALTER TABLE knowledge_graph_version ADD COLUMN reviewed_at DATETIME(3) NULL');
+DROP PROCEDURE full_init_add_column;
+
+INSERT INTO course(course_code,course_name,description,teacher_id,status,created_at,updated_at,is_deleted)
+SELECT 'C','C语言','Stage 08 legacy bridge; completed by the reviewed course-graph import',NULL,'draft',NOW(3),NOW(3),0
+WHERE NOT EXISTS(SELECT 1 FROM course WHERE course_code='C' AND is_deleted=0);
+INSERT INTO course_knowledge(course_id,knowledge_point_id,sequence_no,is_core,coverage_weight,created_at)
+SELECT c.id,kp.id,CASE kp.id WHEN 1 THEN 10 WHEN 2 THEN 20 WHEN 3 THEN 30 WHEN 4 THEN 40 WHEN 5 THEN 50 WHEN 6 THEN 60 ELSE 70 END,CASE WHEN kp.id BETWEEN 1 AND 6 THEN 1 ELSE 0 END,1.0000,NOW(3)
+FROM course c JOIN knowledge_point kp ON kp.id IN(1,2,3,4,5,6,7) AND kp.is_deleted=0 WHERE c.course_code='C' AND c.is_deleted=0
+ON DUPLICATE KEY UPDATE course_id=VALUES(course_id);
 
 SET FOREIGN_KEY_CHECKS = 1;
 
