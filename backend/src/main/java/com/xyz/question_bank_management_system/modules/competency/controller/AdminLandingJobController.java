@@ -5,6 +5,7 @@ import com.xyz.question_bank_management_system.modules.competency.service.Compet
 import com.xyz.question_bank_management_system.modules.competency.vo.CompetencyLandingVO;
 import com.xyz.question_bank_management_system.util.SecurityContextUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +19,7 @@ import java.util.List;
 @RequestMapping("/api/admin/landing/jobs")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
+@ConditionalOnProperty(prefix = "app.landing.boss", name = "sync-enabled", havingValue = "true")
 public class AdminLandingJobController {
 
     private final CompetencyLandingService competencyLandingService;
