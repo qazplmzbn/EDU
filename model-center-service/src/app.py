@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import settings
 from src.routes.models import router as models_router
 from src.services.model_service import ModelService
+from src.services.dimkt_service import DimktService
+from src.routes.dimkt import router as dimkt_router
 
 
 @asynccontextmanager
@@ -26,6 +28,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.mysql_db = mysql_pool
     app.state.model_service = ModelService(mysql_pool)
+    app.state.dimkt_service = DimktService()
     try:
         yield
     finally:
@@ -44,6 +47,7 @@ app.add_middleware(
 )
 
 app.include_router(models_router)
+app.include_router(dimkt_router)
 
 
 @app.get("/health")

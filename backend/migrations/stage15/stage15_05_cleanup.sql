@@ -1,0 +1,1 @@
+SET @stage15_cleanup_confirmed=COALESCE(@stage15_cleanup_confirmed,0);SELECT IF(@stage15_cleanup_confirmed=1,'Model state may be invalidated only by switching status and recalibrating.','BLOCKED: never delete active model state during rollout.') cleanup_status;
