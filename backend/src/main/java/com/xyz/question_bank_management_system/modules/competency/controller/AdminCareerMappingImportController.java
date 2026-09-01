@@ -17,6 +17,8 @@ import java.util.List;
  @GetMapping("/imports") public ApiResponse<List<CareerMappingImportBatch>> batches(@RequestParam(defaultValue="20") int limit){return ApiResponse.ok(service.batches(limit));}
  @GetMapping("/imports/{batchCode}/rows") public ApiResponse<List<CareerMappingImportRow>> rows(@PathVariable String batchCode,@RequestParam(required=false) String status,@RequestParam(defaultValue="100") int limit){return ApiResponse.ok(service.rows(batchCode,status,limit));}
  @GetMapping("/imports/{batchCode}/summary") public ApiResponse<java.util.Map<String,Object>> summary(@PathVariable String batchCode){return ApiResponse.ok(service.summary(batchCode));}
+ @PostMapping("/imports/{batchCode}/rematch") public ApiResponse<java.util.Map<String,Object>> rematch(@PathVariable String batchCode){return ApiResponse.ok(service.rematch(batchCode));}
+ @PostMapping("/imports/{batchCode}/approve-candidates-and-publish") public ApiResponse<CareerMappingImportVO> approveCandidatesAndPublish(@PathVariable String batchCode){return ApiResponse.ok(service.approveCandidatesAndPublish(batchCode,SecurityContextUtil.getUserId()));}
  @PostMapping("/rows/{rowId}/review") public ApiResponse<Void> review(@PathVariable Long rowId,@RequestBody CareerMappingReviewRequest request){service.review(rowId,request,SecurityContextUtil.getUserId());return ApiResponse.ok();}
  @PostMapping("/imports/{batchCode}/publish") public ApiResponse<CareerMappingImportVO> publish(@PathVariable String batchCode){return ApiResponse.ok(service.publish(batchCode,SecurityContextUtil.getUserId()));}
 }
