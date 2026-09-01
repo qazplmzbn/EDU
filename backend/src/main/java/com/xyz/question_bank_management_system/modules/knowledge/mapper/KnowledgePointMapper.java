@@ -10,6 +10,7 @@ public interface KnowledgePointMapper {
     @Select("SELECT * FROM knowledge_point WHERE code=#{code} LIMIT 1") KnowledgePoint selectByCode(String code);
     @Select("SELECT * FROM knowledge_point WHERE is_deleted=0 ORDER BY level,id") List<KnowledgePoint> selectAll();
     @Select("SELECT * FROM knowledge_point WHERE course_id=#{courseId} AND is_deleted=0 ORDER BY chapter_id,level,id") List<KnowledgePoint> selectByCourse(Long courseId);
+    @Select("SELECT * FROM knowledge_point WHERE course_id=#{courseId} AND status='ACTIVE' AND is_deleted=0 ORDER BY chapter_id,level,id") List<KnowledgePoint> selectActiveByCourse(Long courseId);
     @Select("SELECT * FROM knowledge_point WHERE course_id=#{courseId} AND status='ACTIVE' AND is_deleted=0 AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.pathEligible')),'true')='true' ORDER BY chapter_id,level,id") List<KnowledgePoint> selectActivePathEligibleByCourse(Long courseId);
     @Select("SELECT * FROM knowledge_point WHERE course_id=#{courseId} AND code=#{code} AND is_deleted=0 LIMIT 1") KnowledgePoint selectByCourseAndCode(@Param("courseId")Long courseId,@Param("code")String code);
     @Select("SELECT * FROM knowledge_point WHERE id=#{id} AND course_id=#{courseId} AND is_deleted=0") KnowledgePoint selectByIdAndCourse(@Param("id") Long id,@Param("courseId") Long courseId);

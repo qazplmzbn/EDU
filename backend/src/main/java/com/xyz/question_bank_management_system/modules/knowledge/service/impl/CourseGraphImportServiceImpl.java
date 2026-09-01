@@ -41,8 +41,6 @@ import java.util.*;
 @RequiredArgsConstructor
 public class CourseGraphImportServiceImpl implements CourseGraphImportService {
     private static final String MODE = "STRUCTURE_ONLY";
-    private static final String COURSE_CODE = "C";
-    private static final String COURSE_NAME = "C语言";
 
     private final CourseGraphJsonParser parser;
     private final CourseGraphNormalizer normalizer;
@@ -58,6 +56,7 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
     private final SourceDocumentMapper documentMapper;
     private final SourceChunkMapper chunkMapper;
     private final ObjectMapper objectMapper;
+    private final CourseGraphImportPolicy importPolicy;
 
     @Value("${app.file.storage-dir:uploads}") private String storageDir;
 
@@ -90,22 +89,25 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
         insertIssues(record.getId(),analysis.view());
         if (!analysis.view().isValid()) return detail(record.getImportCode());
 
-        requireFirstRelease(analysis.view());
-        verifyLegacyReferences();
-        Course course = requireBridgeCourse();
+        requireImportAdmission(analysis.view());
+        boolean legacyBridge = importPolicy.usesLegacyBridge(analysis.view().getCourseCode());
+        LegacyReferenceBaseline legacyBaseline = legacyBridge ? captureLegacyReferences() : null;
+        Course course = requireOrCreateDraftCourse(analysis.view());
         record.setCourseId(course.getId());
 
         Map<String,CourseChapter> chapters = insertChapters(course.getId(),analysis.normalized());
         Map<String,KnowledgePoint> points = insertPoints(course.getId(),chapters,analysis.normalized(),analysis.view().getNormalizedHash());
-        replaceCourseKnowledge(course.getId(),points);
+        replaceCourseKnowledge(course.getId(),points, legacyBridge);
 
         KnowledgeGraphVersion version = insertGraphVersion(course.getId(),record,analysis.view());
         List<KnowledgeGraphVersionRelation> relations = insertRelations(course.getId(),version,points,analysis.normalized(),operatorId);
         SourceDocument source = persistSource(file,course.getId(),record,analysis.view());
         insertRelationEvidence(source,version,relations,analysis.normalized(),analysis.view().getSourceFileHash());
 
-        archiveLegacy(record.getId());
-        verifyLegacyReferences();
+        if (legacyBridge) {
+            archiveLegacy(record.getId());
+            verifyLegacyReferences(legacyBaseline);
+        }
         record.setGraphVersionId(version.getId());
         record.setStatus("IMPORTED");
         importMapper.updateImported(record);
@@ -138,10 +140,14 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
         if ("APPROVED".equals(value.getStatus())) return detail(importCode);
         if (!"IMPORTED".equals(value.getStatus())) throw BizException.of(ErrorCode.CONFLICT,"只有 IMPORTED 导入可审核通过");
         if (importMapper.countUnresolvedErrors(value.getId()) > 0) throw BizException.of(ErrorCode.CONFLICT,"导入仍有未解决 ERROR");
-        if (value.getModuleCount()!=12||value.getKnowledgePointCount()!=51||value.getPrerequisiteCount()!=26||value.getSimilarCount()!=17) throw BizException.of(ErrorCode.CONFLICT,"C语言固定导入计数不完整");
         KnowledgeGraphVersion graph=versionMapper.selectByImportId(value.getId());
         if(graph==null||!"DRAFT".equals(graph.getStatus()))throw BizException.of(ErrorCode.CONFLICT,"导入缺少 DRAFT 图版本");
-        if(importMapper.countActiveChapters(value.getCourseId())!=12||importMapper.countActivePoints(value.getCourseId())!=51||importMapper.countGraphRelations(graph.getId())!=43||importMapper.countGraphEvidence(graph.getId())!=43)throw BizException.of(ErrorCode.CONFLICT,"导入的章节、知识点、关系或证据实际计数不完整");
+        int expectedRelations = Objects.requireNonNullElse(value.getPrerequisiteCount(),0) + Objects.requireNonNullElse(value.getSimilarCount(),0);
+        int expectedPersistedPoints = Objects.requireNonNullElse(value.getKnowledgePointCount(),0) + Objects.requireNonNullElse(value.getCategoryCount(),0);
+        if(importMapper.countActiveChapters(value.getCourseId())!=Objects.requireNonNullElse(value.getModuleCount(),0)
+                ||importMapper.countActivePoints(value.getCourseId())!=expectedPersistedPoints
+                ||importMapper.countGraphRelations(graph.getId())!=expectedRelations
+                ||importMapper.countGraphEvidence(graph.getId())!=expectedRelations)throw BizException.of(ErrorCode.CONFLICT,"导入的章节、知识点、关系或证据实际计数不完整");
         if(importMapper.approve(value.getId(),reviewerId)!=1)throw BizException.of(ErrorCode.CONFLICT,"导入状态已变化");
         versionMapper.approveReview(graph.getId(),reviewerId);documentMapper.approveImport(importCode);importMapper.approveLegacyMappings(value.getId());
         return detail(importCode);
@@ -154,7 +160,7 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
         CourseGraphValidationVO vo=new CourseGraphValidationVO();CourseGraphDocument.Meta meta=parsed.document().getMeta();
         vo.setCourseCode(meta==null?null:meta.getCourseId());vo.setCourseName(meta==null?null:meta.getCourse());vo.setSchemaVersion(meta==null?null:meta.getSchemaVersion());vo.setMode(mode);vo.setCounts(count(normalized));
         if(!MODE.equals(mode))issues.add(new CourseGraphValidationVO.Issue("ERROR","MODE_UNSUPPORTED","META","mode","首轮只支持 STRUCTURE_ONLY"));
-        if(COURSE_CODE.equals(vo.getCourseCode()))issues.add(new CourseGraphValidationVO.Issue("WARNING","STRING_NODE_MISSING","LEGACY","4","旧“数组与字符串”只能映射到 C.11，图谱缺少独立字符串节点"));
+        if(importPolicy.usesLegacyBridge(vo.getCourseCode()) && normalized.nodes().stream().noneMatch(n -> n.type().equals("KnowledgePoint") && (n.id().toUpperCase(Locale.ROOT).contains("STRING") || n.name().contains("字符串"))))issues.add(new CourseGraphValidationVO.Issue("WARNING","STRING_NODE_MISSING","LEGACY","4","旧“数组与字符串”只能映射到 C.11，图谱缺少独立字符串节点"));
         issues.sort(Comparator.comparing(CourseGraphValidationVO.Issue::getSeverity).thenComparing(CourseGraphValidationVO.Issue::getIssueCode).thenComparing(x->Objects.toString(x.getLocationCode(),"")));
         issues.forEach(x->{if("ERROR".equals(x.getSeverity()))vo.getErrors().add(x);else vo.getWarnings().add(x);});
         vo.setSourceFileHash(HashUtil.sha256(parsed.rawText()));vo.setNormalizedHash(normalized.normalizedHash());vo.setValid(vo.getErrors().isEmpty());
@@ -163,23 +169,33 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
     }
 
     private CourseGraphValidationVO.Counts count(NormalizedCourseGraph graph){CourseGraphValidationVO.Counts c=new CourseGraphValidationVO.Counts();for(var n:graph.nodes())switch(n.type()){case"Course"->c.setCourse(c.getCourse()+1);case"Module"->c.setModule(c.getModule()+1);case"Category"->c.setCategory(c.getCategory()+1);case"KnowledgePoint"->c.setKnowledgePoint(c.getKnowledgePoint()+1);}for(var e:graph.edges())switch(e.relation()){case"CONTAINS"->c.setContains(c.getContains()+1);case"PREREQUISITE"->c.setPrerequisite(c.getPrerequisite()+1);case"SIMILAR"->c.setSimilar(c.getSimilar()+1);}return c;}
-    private void requireFirstRelease(CourseGraphValidationVO v){if(!MODE.equals(v.getMode())||!COURSE_CODE.equals(v.getCourseCode())||!COURSE_NAME.equals(v.getCourseName()))throw BizException.of(ErrorCode.PARAM_ERROR,"首轮只允许提交 C语言 STRUCTURE_ONLY 图谱");CourseGraphValidationVO.Counts c=v.getCounts();if(c.getCourse()!=1||c.getModule()!=12||c.getCategory()!=0||c.getKnowledgePoint()!=51||c.getContains()!=63||c.getPrerequisite()!=26||c.getSimilar()!=17)throw BizException.of(ErrorCode.PARAM_ERROR,"C语言图谱固定计数不匹配");}
+    private void requireImportAdmission(CourseGraphValidationVO v){
+        if(!MODE.equals(v.getMode())||!StringUtils.hasText(v.getCourseCode())||!StringUtils.hasText(v.getCourseName()))throw BizException.of(ErrorCode.PARAM_ERROR,"导入必须提供 STRUCTURE_ONLY 方式和课程信息");
+        CourseGraphValidationVO.Counts c=v.getCounts();
+        if(c.getCourse()!=1||c.getModule()<1||c.getKnowledgePoint()<1||c.getContains()<c.getModule()+c.getKnowledgePoint())throw BizException.of(ErrorCode.PARAM_ERROR,"课程图谱结构计数不完整");
+    }
     private boolean sameRequest(CourseGraphImport old,Analysis a){return Objects.equals(old.getSourceFileHash(),a.view().getSourceFileHash())&&Objects.equals(old.getValidationHash(),a.view().getValidationHash())&&Objects.equals(old.getMode(),a.view().getMode());}
     private CourseGraphImport record(Analysis a,String key,Long user){CourseGraphValidationVO v=a.view();CourseGraphImport r=new CourseGraphImport();r.setImportCode("cgi_"+UUID.randomUUID().toString().replace("-",""));r.setIdempotencyKey(key);r.setCourseCode(Objects.toString(v.getCourseCode(),"UNKNOWN"));r.setCourseName(Objects.toString(v.getCourseName(),"UNKNOWN"));r.setSchemaVersion(Objects.toString(v.getSchemaVersion(),"UNKNOWN"));r.setMode(v.getMode());r.setSourceFileName(a.parsed().fileName());r.setSourceFileHash(v.getSourceFileHash());r.setNormalizedHash(v.getNormalizedHash());r.setValidationHash(v.getValidationHash());r.setNodeCount(v.getCounts().nodeCount());r.setModuleCount(v.getCounts().getModule());r.setCategoryCount(v.getCounts().getCategory());r.setKnowledgePointCount(v.getCounts().getKnowledgePoint());r.setContainsCount(v.getCounts().getContains());r.setPrerequisiteCount(v.getCounts().getPrerequisite());r.setSimilarCount(v.getCounts().getSimilar());r.setErrorCount(v.getErrors().size());r.setWarningCount(v.getWarnings().size());r.setCreatedBy(user);r.setCorrelationId(Objects.toString(CorrelationContext.get(),"course-graph-import"));return r;}
     private void insertIssues(Long importId,CourseGraphValidationVO v){List<CourseGraphImportIssue> rows=new ArrayList<>();for(var i:concat(v.getErrors(),v.getWarnings())){CourseGraphImportIssue x=new CourseGraphImportIssue();x.setImportId(importId);x.setSeverity(i.getSeverity());x.setIssueCode(i.getIssueCode());x.setLocationType(i.getLocationType());x.setLocationCode(i.getLocationCode());x.setMessage(i.getMessage());rows.add(x);}if(!rows.isEmpty())importMapper.batchInsertIssues(rows);}
     private List<CourseGraphValidationVO.Issue> concat(List<CourseGraphValidationVO.Issue>a,List<CourseGraphValidationVO.Issue>b){List<CourseGraphValidationVO.Issue>x=new ArrayList<>(a);x.addAll(b);return x;}
-    private Course requireBridgeCourse(){Course c=courseMapper.selectByCode(COURSE_CODE);if(c==null||!COURSE_NAME.equals(c.getCourseName()))throw BizException.of(ErrorCode.CONFLICT,"Stage 08 正式 C语言课程桥接不存在");return c;}
+    private Course requireOrCreateDraftCourse(CourseGraphValidationVO v){
+        Course c=courseMapper.selectByCode(v.getCourseCode());
+        if(c!=null)return c;
+        Course created=new Course();created.setCourseCode(v.getCourseCode());created.setCourseName(v.getCourseName());created.setDescription("Imported course graph draft");created.setStatus("draft");courseMapper.insert(created);return created;
+    }
     private Map<String,CourseChapter> insertChapters(Long courseId,NormalizedCourseGraph g){Map<String,CourseChapter> out=new LinkedHashMap<>();int order=0;for(var n:g.nodes())if("Module".equals(n.type())){CourseChapter existing=chapterMapper.selectByCode(courseId,n.id());if(existing!=null){out.put(n.id(),existing);continue;}CourseChapter c=new CourseChapter();c.setCourseId(courseId);c.setChapterCode(n.id());c.setChapterName(n.name());c.setOrderNo(++order);c.setStatus("ACTIVE");chapterMapper.insert(c);out.put(n.id(),c);}return out;}
     private Map<String,KnowledgePoint> insertPoints(Long courseId,Map<String,CourseChapter> chapters,NormalizedCourseGraph g,String version){Map<String,KnowledgePoint> out=new LinkedHashMap<>();Map<String,String> parent=new HashMap<>();for(var n:g.nodes())parent.put(n.id(),n.parent());for(var n:g.nodes())if(Set.of("KnowledgePoint","Category").contains(n.type())){if(pointMapper.selectByCourseAndCode(courseId,n.id())!=null)throw BizException.of(ErrorCode.CONFLICT,"知识点编码已存在："+n.id());String chapterCode=n.parent();while(chapterCode!=null&&!chapters.containsKey(chapterCode))chapterCode=parent.get(chapterCode);CourseChapter chapter=chapters.get(chapterCode);if(chapter==null)throw BizException.of(ErrorCode.PARAM_ERROR,"知识点缺少所属章节："+n.id());KnowledgePoint p=new KnowledgePoint();p.setCourseId(courseId);p.setChapterId(chapter.getId());p.setName(n.name());p.setCode(n.id());p.setLevel(Math.max(1,Objects.requireNonNullElse(n.level(),2)));p.setKnowledgeType("CONCEPT");p.setStatus("ACTIVE");p.setContentVersion(version);try{Map<String,Object> metadata=new LinkedHashMap<>();metadata.put("originalNodeType",n.type());metadata.put("pathEligible",!"Category".equals(n.type()));metadata.put("sourceFile",g.source().getMeta().getCourseId());metadata.put("schemaVersion",g.source().getMeta().getSchemaVersion());metadata.put("originalParent",Objects.toString(n.parent(),""));p.setMetadataJson(objectMapper.writeValueAsString(metadata));}catch(Exception ex){throw new IllegalStateException(ex);}pointMapper.insertCourseGraph(p);out.put(n.id(),p);}return out;}
-    private void replaceCourseKnowledge(Long courseId,Map<String,KnowledgePoint> points){importMapper.deleteLegacyBridge();List<CourseKnowledge> rows=new ArrayList<>();int seq=0;for(KnowledgePoint p:points.values())if(!p.getMetadataJson().contains("\"pathEligible\":false")){CourseKnowledge ck=new CourseKnowledge();ck.setCourseId(courseId);ck.setKnowledgePointId(p.getId());ck.setSequenceNo(++seq);ck.setIsCore(1);ck.setCoverageWeight(BigDecimal.ONE);rows.add(ck);}courseKnowledgeMapper.batchInsert(rows);}
-    private KnowledgeGraphVersion insertGraphVersion(Long courseId,CourseGraphImport record,CourseGraphValidationVO v){KnowledgeGraphVersion g=new KnowledgeGraphVersion();g.setVersionCode("graph_C_"+v.getNormalizedHash().substring(0,12));g.setCourseId(courseId);g.setDescription("Imported C language course graph "+record.getImportCode());g.setStatus("DRAFT");g.setNodeCount(v.getCounts().getKnowledgePoint());g.setEdgeCount(v.getCounts().getPrerequisite()+v.getCounts().getSimilar());g.setCorrelationId(record.getCorrelationId());g.setCreatedBy(record.getCreatedBy());g.setImportId(record.getId());g.setReviewStatus("PENDING");versionMapper.insert(g);return g;}
+    private void replaceCourseKnowledge(Long courseId,Map<String,KnowledgePoint> points,boolean legacyBridge){if(legacyBridge)importMapper.deleteLegacyBridge();List<CourseKnowledge> rows=new ArrayList<>();int seq=0;for(KnowledgePoint p:points.values())if(!p.getMetadataJson().contains("\"pathEligible\":false")){CourseKnowledge ck=new CourseKnowledge();ck.setCourseId(courseId);ck.setKnowledgePointId(p.getId());ck.setSequenceNo(++seq);ck.setIsCore(1);ck.setCoverageWeight(BigDecimal.ONE);rows.add(ck);}courseKnowledgeMapper.batchInsert(rows);}
+    private KnowledgeGraphVersion insertGraphVersion(Long courseId,CourseGraphImport record,CourseGraphValidationVO v){KnowledgeGraphVersion g=new KnowledgeGraphVersion();g.setVersionCode("graph_"+v.getCourseCode().replaceAll("[^A-Za-z0-9_-]","_")+"_"+v.getNormalizedHash().substring(0,12));g.setCourseId(courseId);g.setDescription("Imported course graph "+record.getImportCode());g.setStatus("DRAFT");g.setNodeCount(v.getCounts().getKnowledgePoint());g.setEdgeCount(v.getCounts().getPrerequisite()+v.getCounts().getSimilar());g.setCorrelationId(record.getCorrelationId());g.setCreatedBy(record.getCreatedBy());g.setImportId(record.getId());g.setReviewStatus("PENDING");versionMapper.insert(g);return g;}
     private List<KnowledgeGraphVersionRelation> insertRelations(Long courseId,KnowledgeGraphVersion version,Map<String,KnowledgePoint> points,NormalizedCourseGraph graph,Long operator){List<KnowledgeGraphVersionRelation> rows=new ArrayList<>();int order=0;for(var e:graph.edges())if(Set.of("PREREQUISITE","SIMILAR").contains(e.relation())){KnowledgePoint s=points.get(e.source()),t=points.get(e.target());if(s==null||t==null)throw BizException.of(ErrorCode.PARAM_ERROR,"最终关系端点必须是知识点");KnowledgeGraphVersionRelation r=new KnowledgeGraphVersionRelation();r.setCourseId(courseId);r.setGraphVersionId(version.getId());r.setRelationCode(String.format("rel_%s_%03d",version.getVersionCode().substring(8),++order));r.setSourceKnowledgePointId(s.getId());r.setTargetKnowledgePointId(t.getId());r.setRelationType(e.relation());r.setWeight(BigDecimal.ONE);r.setConfidence(BigDecimal.ONE);r.setSourceType("IMPORTED_CURRICULUM");r.setCreatedBy(operator);rows.add(r);}relationMapper.batchInsert(rows);return relationMapper.selectByVersion(version.getId());}
     private SourceDocument persistSource(MultipartFile file,Long courseId,CourseGraphImport record,CourseGraphValidationVO v){try{Path dir=Paths.get(storageDir).toAbsolutePath().normalize().resolve("course-graph-imports");Files.createDirectories(dir);Path target=dir.resolve(v.getSourceFileHash()+".json");if(!Files.exists(target))Files.write(target,file.getBytes());FileAsset asset=new FileAsset();asset.setBizType("course_graph_import");asset.setFileName(record.getSourceFileName());asset.setFileExt("json");asset.setMimeType(file.getContentType());asset.setStorageType("local");asset.setStoragePath(target.toString());asset.setFileSize(file.getSize());asset.setFileHash(v.getSourceFileHash());asset.setUploadedBy(record.getCreatedBy());fileAssetMapper.insert(asset);SourceDocument d=new SourceDocument();d.setCourseId(courseId);d.setTitle(record.getCourseName()+"知识图谱 "+record.getImportCode());d.setDocumentType("course");d.setSourceKind("COURSE_GRAPH_JSON");d.setReviewStatus("PENDING");d.setImportCode(record.getImportCode());d.setFileAssetId(asset.getId());d.setVersion(record.getSchemaVersion());d.setAuthorityLevel(3);d.setContentHash(v.getSourceFileHash());d.setParseStatus("parsed");documentMapper.insertCourseGraph(d);asset.setBizId(d.getId());fileAssetMapper.updateBizId(asset);return d;}catch(Exception ex){throw BizException.of(ErrorCode.BIZ_ERROR,"保存课程图谱来源文件失败："+ex.getMessage());}}
     private void insertRelationEvidence(SourceDocument source,KnowledgeGraphVersion version,List<KnowledgeGraphVersionRelation> relations,NormalizedCourseGraph graph,String fileHash){Map<String,NormalizedCourseGraph.NormalizedEdge> edgeByKey=new LinkedHashMap<>();for(var e:graph.edges())if(Set.of("PREREQUISITE","SIMILAR").contains(e.relation()))edgeByKey.put(e.relation()+":"+e.source()+":"+e.target(),e);if(relations.size()!=edgeByKey.size())throw BizException.of(ErrorCode.CONFLICT,"关系证据数量与最终关系不一致");int index=0;Iterator<NormalizedCourseGraph.NormalizedEdge> iterator=edgeByKey.values().iterator();for(KnowledgeGraphVersionRelation relation:relations){var edge=iterator.next();String content="source="+edge.source()+"\ntarget="+edge.target()+"\nrelation="+edge.relation()+"\nfileHash="+fileHash;SourceChunk chunk=new SourceChunk();chunk.setDocumentId(source.getId());chunk.setChunkIndex(index++);chunk.setSectionTitle(edge.relation()+" "+edge.source()+" -> "+edge.target());chunk.setContent(content);chunk.setContentHash(HashUtil.sha256(content));chunk.setTokenCount(content.length());chunkMapper.insert(chunk);relationMapper.insertEvidenceTyped(version.getId(),relation.getRelationCode(),chunk.getId(),"IMPORTED_CURRICULUM",content,BigDecimal.ONE);}}
     private void archiveLegacy(Long importId){importMapper.disableLegacyPoints();for(LegacySpec spec:legacy()){KnowledgePointLegacyMapping m=new KnowledgePointLegacyMapping();m.setImportId(importId);m.setLegacyKnowledgePointId(spec.id());m.setTargetType(spec.type());m.setTargetExternalCode(spec.target());m.setMappingType(spec.mapping());m.setConfidence(spec.confidence());m.setReviewStatus("PENDING");m.setNotes(spec.notes());importMapper.insertLegacyMapping(m);}}
     private List<LegacySpec> legacy(){return List.of(new LegacySpec(1L,"COURSE","C","COURSE_SCOPE",BigDecimal.ONE,"C语言课程范围"),new LegacySpec(2L,"CHAPTER","C.1","CHAPTER_SCOPE",BigDecimal.ONE,"变量与数据类型"),new LegacySpec(3L,"KNOWLEDGE_POINT","C.4.1","DIRECT",new BigDecimal("0.9000"),"分支"),new LegacySpec(3L,"KNOWLEDGE_POINT","C.4.2","DIRECT",new BigDecimal("0.9000"),"循环"),new LegacySpec(4L,"CHAPTER","C.11","CHAPTER_SCOPE",new BigDecimal("0.8000"),"字符串节点缺失"),new LegacySpec(5L,"CHAPTER","C.9","CHAPTER_SCOPE",BigDecimal.ONE,"函数"),new LegacySpec(6L,"CHAPTER","C.12","CHAPTER_SCOPE",BigDecimal.ONE,"指针"),new LegacySpec(7L,"NONE",null,"ARCHIVED_TEST_DATA",BigDecimal.ONE,"测试节点归档"));}
-    private void verifyLegacyReferences(){if(importMapper.countLegacyQuestionReferences()!=3||importMapper.countLegacyResourceReferences()!=7||importMapper.countLegacyStateReferences()!=3)throw BizException.of(ErrorCode.CONFLICT,"旧知识点历史引用数量与交接基线不一致");}
+    private LegacyReferenceBaseline captureLegacyReferences(){return new LegacyReferenceBaseline(importMapper.countLegacyQuestionReferences(),importMapper.countLegacyResourceReferences(),importMapper.countLegacyStateReferences());}
+    private void verifyLegacyReferences(LegacyReferenceBaseline baseline){if(baseline.questionReferences()!=importMapper.countLegacyQuestionReferences()||baseline.resourceReferences()!=importMapper.countLegacyResourceReferences()||baseline.stateReferences()!=importMapper.countLegacyStateReferences())throw BizException.of(ErrorCode.CONFLICT,"旧知识点历史引用在导入过程中发生变化");}
     private CourseGraphValidationVO.Counts counts(CourseGraphImport x){CourseGraphValidationVO.Counts c=new CourseGraphValidationVO.Counts();int modules=Objects.requireNonNullElse(x.getModuleCount(),0),categories=Objects.requireNonNullElse(x.getCategoryCount(),0),points=Objects.requireNonNullElse(x.getKnowledgePointCount(),0);c.setCourse(Math.max(0,Objects.requireNonNullElse(x.getNodeCount(),0)-modules-categories-points));c.setModule(modules);c.setCategory(categories);c.setKnowledgePoint(points);c.setContains(Objects.requireNonNullElse(x.getContainsCount(),0));c.setPrerequisite(Objects.requireNonNullElse(x.getPrerequisiteCount(),0));c.setSimilar(Objects.requireNonNullElse(x.getSimilarCount(),0));return c;}
     private record Analysis(CourseGraphJsonParser.ParsedCourseGraph parsed,NormalizedCourseGraph normalized,CourseGraphValidationVO view){}
+    private record LegacyReferenceBaseline(int questionReferences,int resourceReferences,int stateReferences){}
     private record LegacySpec(Long id,String type,String target,String mapping,BigDecimal confidence,String notes){}
 }

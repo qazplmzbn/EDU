@@ -82,7 +82,8 @@ public class KnowledgeGraphVersionServiceImpl implements KnowledgeGraphVersionSe
         KnowledgeGraphVersion version = requireVersion(versionCode, true);
         if (!Set.of("DRAFT","REJECTED").contains(version.getStatus())) throw BizException.of(ErrorCode.CONFLICT,"当前图版本不能校验");
         ensureApprovedImport(version);
-        List<KnowledgePoint> points = pointMapper.selectActivePathEligibleByCourse(version.getCourseId());
+        // 图谱需要包含分类/组织节点；学习路径才只读取 pathEligible 知识点。
+        List<KnowledgePoint> points = pointMapper.selectActiveByCourse(version.getCourseId());
         List<KnowledgeGraphVersionRelation> relations = relationMapper.selectByVersion(version.getId());
         List<Map<String,Object>> issues = validateGraph(points,relations);
         String hash = graphHash(points,relations);

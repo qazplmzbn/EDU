@@ -1,0 +1,24 @@
+package com.xyz.question_bank_management_system.modules.competency.mapper;
+
+import com.xyz.question_bank_management_system.modules.competency.entity.*;
+import org.apache.ibatis.annotations.*;
+import java.util.List;
+
+@Mapper public interface CareerMappingImportMapper {
+ @Insert("INSERT INTO career_mapping_import_batch(batch_code,file_name,file_hash,status,row_count,candidate_count,unresolved_count,out_of_catalog_count,created_by,finished_at) VALUES(#{batchCode},#{fileName},#{fileHash},#{status},#{rowCount},#{candidateCount},#{unresolvedCount},#{outOfCatalogCount},#{createdBy},NOW(3))") @Options(useGeneratedKeys=true,keyProperty="id") int insertBatch(CareerMappingImportBatch b);
+ @Insert("INSERT INTO career_mapping_import_row(batch_id,row_no,occupation_label_en,occupation_label_zh,skill_relation,skill_title_en,skill_title_zh,course_name,knowledge_module,knowledge_point,onet_knowledge,onet_knowledge_importance,mapping_type,confidence,evidence,occupation_id,skill_id,course_id,module_external_id,knowledge_point_id,normalized_mapping_type,match_status,match_reason) VALUES(#{batchId},#{rowNo},#{occupationLabelEn},#{occupationLabelZh},#{skillRelation},#{skillTitleEn},#{skillTitleZh},#{courseName},#{knowledgeModule},#{knowledgePoint},#{onetKnowledge},#{onetKnowledgeImportance},#{mappingType},#{confidence},#{evidence},#{occupationId},#{skillId},#{courseId},#{moduleExternalId},#{knowledgePointId},#{normalizedMappingType},#{matchStatus},#{matchReason})") int insertRow(CareerMappingImportRow r);
+ @Select("SELECT * FROM career_mapping_import_batch WHERE batch_code=#{batchCode}") CareerMappingImportBatch batch(@Param("batchCode") String batchCode);
+ @Select("SELECT * FROM career_mapping_import_batch ORDER BY created_at DESC,id DESC LIMIT #{limit}") List<CareerMappingImportBatch> batches(@Param("limit") int limit);
+ @Select("SELECT * FROM career_mapping_import_row WHERE batch_id=#{batchId} AND (#{status} IS NULL OR match_status=#{status}) ORDER BY row_no LIMIT #{limit}") List<CareerMappingImportRow> rows(@Param("batchId") Long batchId,@Param("status") String status,@Param("limit") int limit);
+ @Select("SELECT match_status AS status,COUNT(*) AS count FROM career_mapping_import_row WHERE batch_id=#{batchId} GROUP BY match_status ORDER BY match_status") List<java.util.Map<String,Object>> statusSummary(@Param("batchId") Long batchId);
+ @Select("SELECT * FROM career_mapping_import_row WHERE id=#{id}") CareerMappingImportRow row(@Param("id") Long id);
+ @Select("SELECT id FROM occupation WHERE name_zh=#{name} AND is_deleted=0 LIMIT 1") Long occupationId(@Param("name") String name);
+ @Select("SELECT id FROM skill WHERE name_zh=#{name} AND is_deleted=0 LIMIT 1") Long skillId(@Param("name") String name);
+ @Select("SELECT id FROM course WHERE course_name=#{name} AND is_deleted=0 LIMIT 1") Long courseId(@Param("name") String name);
+ @Select("SELECT id FROM knowledge_point WHERE course_id=#{courseId} AND name=#{name} AND is_deleted=0 LIMIT 1") Long pointId(@Param("courseId") Long courseId,@Param("name") String name);
+ @Update("UPDATE career_mapping_import_row SET occupation_id=#{occupationId},skill_id=#{skillId},course_id=#{courseId},module_external_id=#{moduleExternalId},knowledge_point_id=#{knowledgePointId},match_status=#{decision},match_reason=#{reason},reviewer_id=#{operatorId},reviewed_at=NOW(3) WHERE id=#{rowId}") int review(@Param("rowId")Long rowId,@Param("occupationId")Long occupationId,@Param("skillId")Long skillId,@Param("courseId")Long courseId,@Param("moduleExternalId")String moduleExternalId,@Param("knowledgePointId")Long knowledgePointId,@Param("decision")String decision,@Param("reason")String reason,@Param("operatorId")Long operatorId);
+ @Insert("INSERT INTO career_mapping_review_decision(row_id,decision,before_json,after_json,reason,operator_id) VALUES(#{rowId},#{decision},#{beforeJson},#{afterJson},#{reason},#{operatorId})") int decision(@Param("rowId")Long rowId,@Param("decision")String decision,@Param("beforeJson")String beforeJson,@Param("afterJson")String afterJson,@Param("reason")String reason,@Param("operatorId")Long operatorId);
+ @Select("SELECT * FROM career_mapping_import_row WHERE batch_id=#{batchId} AND match_status='APPROVED' ORDER BY row_no") List<CareerMappingImportRow> approvedRows(@Param("batchId") Long batchId);
+ @Select("SELECT COUNT(*) FROM knowledge_point p JOIN course c ON c.id=p.course_id WHERE p.id=#{knowledgePointId} AND p.course_id=#{courseId} AND p.status='ACTIVE' AND p.is_deleted=0 AND c.status='active' AND c.is_deleted=0") long activePointInActiveCourse(@Param("courseId")Long courseId,@Param("knowledgePointId")Long knowledgePointId);
+ @Update("UPDATE career_mapping_import_batch SET status=#{status},finished_at=NOW(3),error_message=#{message} WHERE id=#{batchId}") int updateBatchStatus(@Param("batchId")Long batchId,@Param("status")String status,@Param("message")String message);
+}

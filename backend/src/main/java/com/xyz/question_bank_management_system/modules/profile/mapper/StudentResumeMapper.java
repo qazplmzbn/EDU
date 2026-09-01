@@ -1,0 +1,12 @@
+package com.xyz.question_bank_management_system.modules.profile.mapper;
+import com.xyz.question_bank_management_system.modules.profile.entity.*; import org.apache.ibatis.annotations.*; import java.util.List;
+@Mapper public interface StudentResumeMapper {
+ @Select("SELECT * FROM student_resume_document WHERE user_id=#{userId} AND file_hash=#{hash} LIMIT 1") StudentResumeDocument byHash(@Param("userId")Long userId,@Param("hash")String hash);
+ @Insert("INSERT INTO student_resume_document(user_id,file_asset_id,file_name,file_hash,parsed_text,parse_status,parser_version,consent_version,created_at,parsed_at) VALUES(#{userId},#{fileAssetId},#{fileName},#{fileHash},#{parsedText},#{parseStatus},#{parserVersion},#{consentVersion},NOW(3),NOW(3))") @Options(useGeneratedKeys=true,keyProperty="id") int insertDocument(StudentResumeDocument e);
+ @Select("SELECT * FROM student_resume_document WHERE user_id=#{userId} ORDER BY created_at DESC,id DESC") List<StudentResumeDocument> documents(Long userId);
+ @Select("SELECT * FROM student_resume_document WHERE id=#{id} AND user_id=#{userId}") StudentResumeDocument document(@Param("id")Long id,@Param("userId")Long userId);
+ @Insert("INSERT INTO student_resume_evidence(resume_id,target_type,target_id,raw_name,normalized_name,evidence_value,confidence,evidence_text,match_status,model_version,source_span_json,applied_status,created_at) VALUES(#{resumeId},#{targetType},#{targetId},#{rawName},#{normalizedName},#{evidenceValue},#{confidence},#{evidenceText},#{matchStatus},#{modelVersion},#{sourceSpanJson},#{appliedStatus},NOW(3)) ON DUPLICATE KEY UPDATE confidence=VALUES(confidence),evidence_text=VALUES(evidence_text),match_status=VALUES(match_status),source_span_json=VALUES(source_span_json)") @Options(useGeneratedKeys=true,keyProperty="id") int upsertEvidence(StudentResumeEvidence e);
+ @Select("SELECT * FROM student_resume_evidence WHERE resume_id=#{resumeId} ORDER BY id") List<StudentResumeEvidence> evidence(Long resumeId);
+ @Update("UPDATE student_resume_evidence SET applied_status=#{status},applied_at=NOW(3) WHERE id=#{id} AND resume_id=#{resumeId}") int confirm(@Param("id")Long id,@Param("resumeId")Long resumeId,@Param("status")String status);
+ @Select("SELECT COUNT(*) FROM student_resume_evidence e JOIN student_resume_document d ON d.id=e.resume_id WHERE d.user_id=#{userId} AND e.applied_status='CONFIRMED'") int confirmedEvidenceCount(@Param("userId")Long userId);
+}
