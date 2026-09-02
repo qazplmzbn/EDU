@@ -201,9 +201,11 @@ CREATE TABLE IF NOT EXISTS knowledge_relation (
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   is_deleted TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_knowledge_relation (source_id, target_id, relation_type),
+  UNIQUE KEY uk_knowledge_relation_version (graph_version_id, source_id, target_id, relation_type),
   KEY idx_knowledge_relation_source (source_id, relation_type, is_deleted),
   KEY idx_knowledge_relation_target (target_id, relation_type, is_deleted),
+  KEY idx_knowledge_relation_source_fk (source_id),
+  KEY idx_knowledge_relation_target_fk (target_id),
   CONSTRAINT ck_knowledge_relation_distinct CHECK (source_id <> target_id),
   CONSTRAINT ck_knowledge_relation_weight CHECK (weight BETWEEN 0 AND 1),
   CONSTRAINT ck_knowledge_relation_confidence CHECK (confidence BETWEEN 0 AND 1),
@@ -291,9 +293,11 @@ CREATE TABLE IF NOT EXISTS agent_step (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS agent_review (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, agent_task_id BIGINT UNSIGNED NOT NULL, agent_step_id BIGINT UNSIGNED NULL, target_type VARCHAR(24) NOT NULL, target_id BIGINT UNSIGNED NULL,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, agent_task_id BIGINT UNSIGNED NULL, agent_step_id BIGINT UNSIGNED NULL, target_type VARCHAR(24) NOT NULL, target_id BIGINT UNSIGNED NULL,
   factual_score DECIMAL(6,4) NULL, coverage_score DECIMAL(6,4) NULL, difficulty_match_score DECIMAL(6,4) NULL, hallucination_rate DECIMAL(6,4) NULL, source_consistency_score DECIMAL(6,4) NULL,
-  review_status VARCHAR(24) NOT NULL DEFAULT 'pending', review_report LONGTEXT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
+  review_status VARCHAR(24) NOT NULL DEFAULT 'pending', review_report LONGTEXT NULL, bundle_id BIGINT UNSIGNED NULL, blueprint_id BIGINT UNSIGNED NULL, review_dimension VARCHAR(64) NULL, issue_code VARCHAR(64) NULL,
+  repair_target VARCHAR(64) NULL, repair_scope VARCHAR(255) NULL, repair_action VARCHAR(255) NULL, repair_instruction VARCHAR(2000) NULL, round_no INT NULL,
+  evidence_refs_json JSON NULL, tool_result_json JSON NULL, reviewer_role VARCHAR(64) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id),
   KEY idx_agent_review_task(agent_task_id,created_at), KEY idx_agent_review_step(agent_step_id), KEY idx_agent_review_status(review_status,created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -494,6 +498,7 @@ CREATE TABLE IF NOT EXISTS qb_attempt_question (
   question_type TINYINT NULL,
   difficulty TINYINT NULL,
   knowledge_snapshot_json LONGTEXT NULL,
+  generated_question_code VARCHAR(64) NULL,
   PRIMARY KEY (id),
   KEY idx_qb_attempt_question_attempt (attempt_id, order_no),
   KEY idx_qb_attempt_question_question (question_id)
@@ -848,7 +853,7 @@ CREATE TABLE IF NOT EXISTS learning_path (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS learning_path_item (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, path_id BIGINT UNSIGNED NOT NULL, path_version_id BIGINT UNSIGNED NULL, path_step_code VARCHAR(64) NULL, order_no INT NOT NULL DEFAULT 0, item_type VARCHAR(24) NULL, knowledge_point_id BIGINT UNSIGNED NULL, resource_id BIGINT UNSIGNED NULL, question_id BIGINT UNSIGNED NULL, assignment_id BIGINT UNSIGNED NULL, stage VARCHAR(24) NULL, reason_code VARCHAR(64) NULL, mastery_before DECIMAL(6,4) NULL, confidence_before DECIMAL(6,4) NULL, completed_at DATETIME(3) NULL, planned_start_at DATETIME(3) NULL, planned_end_at DATETIME(3) NULL, status VARCHAR(24) NOT NULL DEFAULT 'pending', decision_reason VARCHAR(2000) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, path_id BIGINT UNSIGNED NOT NULL, path_version_id BIGINT UNSIGNED NULL, path_step_code VARCHAR(64) NULL, order_no INT NOT NULL DEFAULT 0, item_type VARCHAR(24) NOT NULL, knowledge_point_id BIGINT UNSIGNED NULL, resource_id BIGINT UNSIGNED NULL, question_id BIGINT UNSIGNED NULL, assignment_id BIGINT UNSIGNED NULL, stage VARCHAR(24) NULL, reason_code VARCHAR(64) NULL, mastery_before DECIMAL(6,4) NULL, confidence_before DECIMAL(6,4) NULL, completed_at DATETIME(3) NULL, planned_start_at DATETIME(3) NULL, planned_end_at DATETIME(3) NULL, status VARCHAR(24) NOT NULL DEFAULT 'pending', decision_reason VARCHAR(2000) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY(id), UNIQUE KEY uk_learning_path_item_order(path_id,order_no), KEY idx_learning_path_item_knowledge(knowledge_point_id,status), KEY idx_learning_path_item_resource(resource_id,status), CONSTRAINT fk_learning_path_item_path FOREIGN KEY(path_id) REFERENCES learning_path(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_knowledge FOREIGN KEY(knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_resource FOREIGN KEY(resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_question FOREIGN KEY(question_id) REFERENCES qb_question(id) ON DELETE RESTRICT ON UPDATE RESTRICT, CONSTRAINT fk_learning_path_item_assignment FOREIGN KEY(assignment_id) REFERENCES qb_assignment(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -873,7 +878,7 @@ CREATE TABLE IF NOT EXISTS resource_item(id BIGINT UNSIGNED NOT NULL AUTO_INCREM
 CREATE TABLE IF NOT EXISTS resource_review(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,job_id BIGINT UNSIGNED NOT NULL,bundle_id BIGINT UNSIGNED NULL,blueprint_id BIGINT UNSIGNED NOT NULL,expert_role VARCHAR(64) NOT NULL,result VARCHAR(16) NOT NULL,issue_type VARCHAR(64) NULL,location VARCHAR(255) NULL,description VARCHAR(1000) NULL,repair_target VARCHAR(64) NULL,repair_scope VARCHAR(255) NULL,repair_action VARCHAR(255) NULL,repair_instruction VARCHAR(2000) NULL,critical TINYINT NOT NULL DEFAULT 0,round_no INT NOT NULL,report_json JSON NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS resource_assessment_release(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,release_code VARCHAR(64) NOT NULL,user_id BIGINT UNSIGNED NOT NULL,bundle_id BIGINT UNSIGNED NOT NULL,resource_item_id BIGINT UNSIGNED NOT NULL,status VARCHAR(24) NOT NULL,released_at DATETIME(3) NOT NULL,expires_at DATETIME(3) NULL,consumed_at DATETIME(3) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_assessment_release_code(release_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS resource_interaction(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,interaction_code VARCHAR(64) NOT NULL,interaction_seq BIGINT UNSIGNED NOT NULL,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,resource_bundle_id BIGINT UNSIGNED NOT NULL,resource_version BIGINT UNSIGNED NOT NULL,resource_unit_id BIGINT UNSIGNED NOT NULL,resource_item_id BIGINT UNSIGNED NOT NULL,generated_question_code VARCHAR(64) NOT NULL,question_purpose VARCHAR(32) NOT NULL,visibility VARCHAR(32) NOT NULL,question_difficulty DECIMAL(6,4) NOT NULL,primary_knowledge_point_id BIGINT UNSIGNED NOT NULL,knowledge_point_weights_json JSON NOT NULL,score_normalized DECIMAL(6,4) NOT NULL,correct TINYINT NOT NULL,status VARCHAR(24) NOT NULL,action_origin VARCHAR(32) NOT NULL,grading_version VARCHAR(64) NOT NULL,answer_json JSON NOT NULL,request_id VARCHAR(128) NOT NULL,correlation_id VARCHAR(64) NOT NULL,client_occurred_at DATETIME(3) NULL,submitted_at DATETIME(3) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_interaction_code(interaction_code),UNIQUE KEY uk_interaction_request(request_id),UNIQUE KEY uk_interaction_seq(user_id,course_id,interaction_seq)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-CREATE TABLE IF NOT EXISTS profile_evidence_event(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,event_id VARCHAR(64) NOT NULL,interaction_id BIGINT UNSIGNED NOT NULL,consumer_name VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,retry_count INT NOT NULL DEFAULT 0,processed_at DATETIME(3) NULL,error_message VARCHAR(1000) NULL,PRIMARY KEY(id),UNIQUE KEY uk_profile_evidence_consumer(event_id,consumer_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS profile_evidence_event(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,event_id VARCHAR(64) NOT NULL,interaction_id BIGINT UNSIGNED NOT NULL,consumer_name VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,retry_count INT NOT NULL DEFAULT 0,processed_at DATETIME(3) NULL,error_message VARCHAR(1000) NULL,PRIMARY KEY(id),UNIQUE KEY uk_profile_evidence_consumer(event_id,consumer_name),UNIQUE KEY uk_profile_evidence_interaction_consumer(interaction_id,consumer_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS outbox_event(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,event_id VARCHAR(64) NOT NULL,aggregate_type VARCHAR(64) NOT NULL,aggregate_id BIGINT UNSIGNED NOT NULL,event_type VARCHAR(128) NOT NULL,payload_json JSON NOT NULL,status VARCHAR(24) NOT NULL,retry_count INT NOT NULL DEFAULT 0,next_retry_at DATETIME(3) NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),published_at DATETIME(3) NULL,PRIMARY KEY(id),UNIQUE KEY uk_outbox_event(event_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS resource_action_decision(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,course_id BIGINT UNSIGNED NOT NULL,path_id BIGINT UNSIGNED NOT NULL,path_version BIGINT UNSIGNED NOT NULL,interaction_id BIGINT UNSIGNED NOT NULL,action VARCHAR(24) NOT NULL,reason VARCHAR(64) NOT NULL,correlation_id VARCHAR(64) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_resource_decision_interaction(interaction_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS exam_eligibility_snapshot(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,snapshot_code VARCHAR(64) NOT NULL,user_id BIGINT UNSIGNED NOT NULL,goal_id BIGINT UNSIGNED NOT NULL,eligible TINYINT NOT NULL,course_versions_json JSON NOT NULL,profile_versions_json JSON NOT NULL,rule_version VARCHAR(64) NOT NULL,result_json JSON NOT NULL,correlation_id VARCHAR(64) NOT NULL,calculated_at DATETIME(3) NOT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_eligibility_snapshot_code(snapshot_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -910,8 +915,8 @@ CREATE TABLE IF NOT EXISTS knowledge_source (
  PRIMARY KEY(id),UNIQUE KEY uk_knowledge_source(knowledge_point_id,source_chunk_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS resource_source (
- id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,resource_id BIGINT UNSIGNED NOT NULL,source_chunk_id BIGINT UNSIGNED NOT NULL,support_type VARCHAR(24) NOT NULL DEFAULT 'grounding',relevance_score DECIMAL(6,4) NULL,citation_order INT NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
- PRIMARY KEY(id),UNIQUE KEY uk_resource_source(resource_id,source_chunk_id)
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,resource_id BIGINT UNSIGNED NULL,resource_item_id BIGINT UNSIGNED NULL,source_chunk_id BIGINT UNSIGNED NOT NULL,support_type VARCHAR(24) NOT NULL DEFAULT 'grounding',relevance_score DECIMAL(6,4) NULL,citation_order INT NULL,evidence_type VARCHAR(32) NULL,citation_text VARCHAR(1000) NULL,support_score DECIMAL(6,4) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_resource_source(resource_id,source_chunk_id),KEY idx_resource_source_chunk(source_chunk_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS course_graph_import(
@@ -944,6 +949,321 @@ INSERT INTO course_knowledge(course_id,knowledge_point_id,sequence_no,is_core,co
 SELECT c.id,kp.id,CASE kp.id WHEN 1 THEN 10 WHEN 2 THEN 20 WHEN 3 THEN 30 WHEN 4 THEN 40 WHEN 5 THEN 50 WHEN 6 THEN 60 ELSE 70 END,CASE WHEN kp.id BETWEEN 1 AND 6 THEN 1 ELSE 0 END,1.0000,NOW(3)
 FROM course c JOIN knowledge_point kp ON kp.id IN(1,2,3,4,5,6,7) AND kp.is_deleted=0 WHERE c.course_code='C' AND c.is_deleted=0
 ON DUPLICATE KEY UPDATE course_id=VALUES(course_id);
+
+-- Stage 20-24 career, resume and recommendation baseline.
+-- Keep this section aligned with the incremental migrations so a new database
+-- has the same schema as an upgraded database.
+DROP PROCEDURE IF EXISTS full_init_add_career_column;
+DELIMITER $$
+CREATE PROCEDURE full_init_add_career_column(IN t VARCHAR(64), IN c VARCHAR(64), IN d TEXT)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = t AND column_name = c
+  ) THEN
+    SET @sql_text = d;
+    PREPARE stmt FROM @sql_text;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END$$
+DELIMITER ;
+CALL full_init_add_career_column('occupation_skill','required_level_source','ALTER TABLE occupation_skill ADD COLUMN required_level_source VARCHAR(32) NULL AFTER required_level');
+CALL full_init_add_career_column('occupation_skill','required_level_version','ALTER TABLE occupation_skill ADD COLUMN required_level_version VARCHAR(64) NULL AFTER required_level_source');
+CALL full_init_add_career_column('occupation_skill','published_batch_code','ALTER TABLE occupation_skill ADD COLUMN published_batch_code VARCHAR(64) NULL AFTER required_level_version');
+CALL full_init_add_career_column('occupation_skill','required_level_updated_at','ALTER TABLE occupation_skill ADD COLUMN required_level_updated_at DATETIME(3) NULL AFTER published_batch_code');
+CALL full_init_add_career_column('student_skill_state','core_proficiency_value','ALTER TABLE student_skill_state ADD COLUMN core_proficiency_value DECIMAL(6,4) NOT NULL DEFAULT 0.0000 AFTER proficiency_value');
+CALL full_init_add_career_column('student_skill_state','knowledge_coverage_rate','ALTER TABLE student_skill_state ADD COLUMN knowledge_coverage_rate DECIMAL(6,4) NOT NULL DEFAULT 0.0000 AFTER confidence');
+CALL full_init_add_career_column('student_skill_state','calculation_version','ALTER TABLE student_skill_state ADD COLUMN calculation_version VARCHAR(64) NULL AFTER evidence_count');
+CALL full_init_add_career_column('student_skill_state','calculated_at','ALTER TABLE student_skill_state ADD COLUMN calculated_at DATETIME(3) NULL AFTER calculation_version');
+DROP PROCEDURE full_init_add_career_column;
+
+CREATE TABLE IF NOT EXISTS student_occupation_skill_gap (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  snapshot_code VARCHAR(64) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  occupation_id BIGINT UNSIGNED NOT NULL,
+  occupation_skill_id BIGINT UNSIGNED NOT NULL,
+  skill_id BIGINT UNSIGNED NOT NULL,
+  required_level DECIMAL(6,4) NOT NULL,
+  current_level DECIMAL(6,4) NOT NULL,
+  current_confidence DECIMAL(6,4) NOT NULL,
+  gap_value DECIMAL(6,4) NOT NULL,
+  priority_score DECIMAL(10,6) NOT NULL,
+  gap_status VARCHAR(32) NOT NULL,
+  target_batch_code VARCHAR(64) NOT NULL,
+  calculation_version VARCHAR(64) NOT NULL,
+  calculated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  correlation_id VARCHAR(64) NULL,
+  PRIMARY KEY (id),
+  KEY idx_gap_snapshot(snapshot_code),
+  KEY idx_gap_user_occupation(user_id,occupation_id,calculated_at),
+  KEY idx_gap_priority(user_id,occupation_id,priority_score),
+  CONSTRAINT fk_gap_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_gap_occupation FOREIGN KEY(occupation_id) REFERENCES occupation(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_gap_occupation_skill FOREIGN KEY(occupation_skill_id) REFERENCES occupation_skill(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_gap_skill FOREIGN KEY(skill_id) REFERENCES skill(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_course_recommendation_snapshot (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  snapshot_code VARCHAR(64) NOT NULL,
+  gap_snapshot_code VARCHAR(64) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  occupation_id BIGINT UNSIGNED NOT NULL,
+  target_batch_code VARCHAR(64) NOT NULL,
+  profile_version VARCHAR(64) NULL,
+  graph_versions_json JSON NULL,
+  skill_state_version VARCHAR(64) NULL,
+  course_catalog_hash VARCHAR(128) NULL,
+  algorithm_version VARCHAR(64) NOT NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'READY',
+  request_json JSON NULL,
+  result_summary_json JSON NULL,
+  correlation_id VARCHAR(64) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_career_recommendation_snapshot(snapshot_code),
+  KEY idx_recommendation_user_occupation(user_id,occupation_id,created_at),
+  CONSTRAINT fk_career_recommendation_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_career_recommendation_occupation FOREIGN KEY(occupation_id) REFERENCES occupation(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_course_recommendation_item (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  snapshot_id BIGINT UNSIGNED NOT NULL,
+  course_id BIGINT UNSIGNED NOT NULL,
+  rank_no INT NOT NULL,
+  course_score DECIMAL(10,6) NOT NULL,
+  coverage_score DECIMAL(10,6) NOT NULL,
+  core_coverage_rate DECIMAL(10,6) NOT NULL,
+  difficulty_fit DECIMAL(10,6) NOT NULL DEFAULT 1.000000,
+  unfinished_factor DECIMAL(10,6) NOT NULL DEFAULT 1.000000,
+  course_quality DECIMAL(10,6) NOT NULL DEFAULT 1.000000,
+  estimated_hours DECIMAL(10,2) NULL,
+  reason_json JSON NOT NULL,
+  covered_skill_ids_json JSON NOT NULL,
+  covered_knowledge_point_ids_json JSON NOT NULL,
+  fallback_type VARCHAR(32) NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'RECOMMENDED',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_career_recommendation_course(snapshot_id,course_id),
+  KEY idx_recommendation_item_snapshot(snapshot_id,rank_no),
+  CONSTRAINT fk_career_recommendation_item_snapshot FOREIGN KEY(snapshot_id) REFERENCES career_course_recommendation_snapshot(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_career_recommendation_item_course FOREIGN KEY(course_id) REFERENCES course(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_mapping_import_batch (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  batch_code VARCHAR(64) NOT NULL,
+  source_type VARCHAR(32) NOT NULL DEFAULT 'SKILL_KNOWLEDGE_CSV',
+  file_name VARCHAR(255) NOT NULL,
+  file_hash VARCHAR(128) NOT NULL,
+  schema_version VARCHAR(32) NOT NULL DEFAULT 'v1',
+  status VARCHAR(32) NOT NULL DEFAULT 'IMPORTED',
+  row_count INT NOT NULL DEFAULT 0,
+  candidate_count INT NOT NULL DEFAULT 0,
+  unresolved_count INT NOT NULL DEFAULT 0,
+  out_of_catalog_count INT NOT NULL DEFAULT 0,
+  created_by BIGINT UNSIGNED NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  finished_at DATETIME(3) NULL,
+  error_message VARCHAR(1000) NULL,
+  PRIMARY KEY(id),
+  UNIQUE KEY uk_career_mapping_batch_code(batch_code),
+  KEY idx_career_mapping_batch_hash(file_hash),
+  CONSTRAINT fk_career_mapping_batch_operator FOREIGN KEY(created_by) REFERENCES sys_user(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_mapping_import_row (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  batch_id BIGINT UNSIGNED NOT NULL,
+  row_no INT NOT NULL,
+  occupation_label_en VARCHAR(255) NULL,
+  occupation_label_zh VARCHAR(255) NULL,
+  skill_relation VARCHAR(32) NULL,
+  skill_title_en VARCHAR(255) NULL,
+  skill_title_zh VARCHAR(255) NULL,
+  course_name VARCHAR(255) NULL,
+  knowledge_module VARCHAR(255) NULL,
+  knowledge_point VARCHAR(1000) NULL,
+  onet_knowledge VARCHAR(255) NULL,
+  onet_knowledge_importance VARCHAR(64) NULL,
+  mapping_type VARCHAR(32) NULL,
+  confidence DECIMAL(6,4) NULL,
+  evidence TEXT NULL,
+  occupation_id BIGINT UNSIGNED NULL,
+  skill_id BIGINT UNSIGNED NULL,
+  course_id BIGINT UNSIGNED NULL,
+  module_external_id VARCHAR(128) NULL,
+  knowledge_point_id BIGINT UNSIGNED NULL,
+  normalized_mapping_type VARCHAR(32) NULL,
+  match_status VARCHAR(32) NOT NULL,
+  match_reason VARCHAR(1000) NULL,
+  reviewer_id BIGINT UNSIGNED NULL,
+  reviewed_at DATETIME(3) NULL,
+  PRIMARY KEY(id),
+  UNIQUE KEY uk_career_mapping_row(batch_id,row_no),
+  KEY idx_career_mapping_row_status(batch_id,match_status),
+  CONSTRAINT fk_career_mapping_row_batch FOREIGN KEY(batch_id) REFERENCES career_mapping_import_batch(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_career_mapping_row_reviewer FOREIGN KEY(reviewer_id) REFERENCES sys_user(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_mapping_review_decision (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  row_id BIGINT UNSIGNED NOT NULL,
+  decision VARCHAR(32) NOT NULL,
+  before_json JSON NULL,
+  after_json JSON NULL,
+  reason VARCHAR(1000) NULL,
+  operator_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY(id),
+  KEY idx_career_mapping_decision_row(row_id,created_at),
+  CONSTRAINT fk_career_mapping_decision_row FOREIGN KEY(row_id) REFERENCES career_mapping_import_row(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_career_mapping_decision_operator FOREIGN KEY(operator_id) REFERENCES sys_user(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_resume_document (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  file_asset_id BIGINT UNSIGNED NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_hash VARCHAR(128) NOT NULL,
+  parsed_text LONGTEXT NULL,
+  parse_status VARCHAR(32) NOT NULL DEFAULT 'PARSED',
+  parser_version VARCHAR(64) NOT NULL DEFAULT 'resume_text_match_v1',
+  consent_version VARCHAR(64) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  parsed_at DATETIME(3) NULL,
+  error_message VARCHAR(1000) NULL,
+  PRIMARY KEY(id),
+  UNIQUE KEY uk_resume_user_hash(user_id,file_hash),
+  KEY idx_resume_user_time(user_id,created_at),
+  CONSTRAINT fk_resume_document_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_resume_document_asset FOREIGN KEY(file_asset_id) REFERENCES file_asset(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_resume_evidence (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  resume_id BIGINT UNSIGNED NOT NULL,
+  target_type VARCHAR(24) NOT NULL,
+  target_id BIGINT UNSIGNED NULL,
+  raw_name VARCHAR(255) NOT NULL,
+  normalized_name VARCHAR(255) NULL,
+  evidence_value DECIMAL(10,4) NULL,
+  confidence DECIMAL(6,4) NOT NULL,
+  evidence_text VARCHAR(2000) NULL,
+  match_status VARCHAR(32) NOT NULL,
+  model_version VARCHAR(64) NOT NULL,
+  source_span_json JSON NULL,
+  applied_status VARCHAR(32) NOT NULL DEFAULT 'CANDIDATE',
+  applied_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY(id),
+  UNIQUE KEY uk_resume_evidence_key(resume_id,target_type,target_id,raw_name),
+  KEY idx_resume_evidence_resume(resume_id,match_status),
+  CONSTRAINT fk_resume_evidence_resume FOREIGN KEY(resume_id) REFERENCES student_resume_document(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_course_recommendation_acceptance (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  snapshot_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  course_id BIGINT UNSIGNED NOT NULL,
+  learning_path_code VARCHAR(64) NOT NULL,
+  accepted_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  status VARCHAR(24) NOT NULL DEFAULT 'ACCEPTED',
+  PRIMARY KEY(id),
+  UNIQUE KEY uk_career_acceptance(snapshot_id,course_id),
+  KEY idx_career_acceptance_user(user_id,accepted_at),
+  CONSTRAINT fk_career_acceptance_snapshot FOREIGN KEY(snapshot_id) REFERENCES career_course_recommendation_snapshot(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_career_acceptance_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_career_acceptance_course FOREIGN KEY(course_id) REFERENCES course(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS occupation_skill_level_analysis (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  batch_code VARCHAR(64) NOT NULL,
+  occupation_id BIGINT UNSIGNED NOT NULL,
+  round_no INT NOT NULL,
+  provider_key VARCHAR(64) NULL,
+  model_name VARCHAR(128) NULL,
+  input_json JSON NOT NULL,
+  output_json JSON NULL,
+  status VARCHAR(24) NOT NULL,
+  error_message VARCHAR(1000) NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY(id),
+  UNIQUE KEY uk_occupation_level_analysis_batch_round(batch_code,round_no),
+  KEY idx_occupation_level_analysis(occupation_id,batch_code,round_no),
+  CONSTRAINT fk_occupation_level_analysis_occupation FOREIGN KEY(occupation_id) REFERENCES occupation(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_occupation_level_analysis_user FOREIGN KEY(created_by) REFERENCES sys_user(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_resource_recommendation (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,resource_id BIGINT UNSIGNED NOT NULL,goal_id BIGINT UNSIGNED NULL,knowledge_point_id BIGINT UNSIGNED NULL,skill_id BIGINT UNSIGNED NULL,profile_snapshot_id BIGINT UNSIGNED NULL,path_id BIGINT UNSIGNED NULL,recommendation_type VARCHAR(32) NOT NULL DEFAULT 'remedial',rank_no INT NULL,recommend_score DECIMAL(6,4) NULL,difficulty_match_score DECIMAL(6,4) NULL,reason_text VARCHAR(2000) NULL,status VARCHAR(24) NOT NULL DEFAULT 'recommended',recommended_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),UNIQUE KEY uk_student_resource_recommendation(user_id,resource_id),KEY idx_recommendation_user_status(user_id,status,rank_no),CONSTRAINT fk_recommendation_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_recommendation_resource FOREIGN KEY(resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_recommendation_point FOREIGN KEY(knowledge_point_id) REFERENCES knowledge_point(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_recommendation_snapshot FOREIGN KEY(profile_snapshot_id) REFERENCES student_profile_snapshot(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_recommendation_path FOREIGN KEY(path_id) REFERENCES learning_path(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT ck_recommendation_scores CHECK((recommend_score IS NULL OR recommend_score BETWEEN 0 AND 1) AND (difficulty_match_score IS NULL OR difficulty_match_score BETWEEN 0 AND 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS resource_feedback (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,resource_id BIGINT UNSIGNED NOT NULL,recommendation_id BIGINT UNSIGNED NULL,feedback_type VARCHAR(32) NOT NULL,rating DECIMAL(4,2) NULL,feedback_value VARCHAR(255) NULL,feedback_text VARCHAR(2000) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ PRIMARY KEY(id),KEY idx_resource_feedback_user(user_id,created_at),KEY idx_resource_feedback_resource(resource_id,created_at),CONSTRAINT fk_resource_feedback_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_resource_feedback_resource FOREIGN KEY(resource_id) REFERENCES qb_learning_resource(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_resource_feedback_recommendation FOREIGN KEY(recommendation_id) REFERENCES student_resource_recommendation(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT ck_resource_feedback_rating CHECK(rating IS NULL OR rating BETWEEN 0 AND 5)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS dialogue_session (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,user_id BIGINT UNSIGNED NOT NULL,title VARCHAR(255) NULL,session_type VARCHAR(32) NOT NULL DEFAULT 'tutor',status VARCHAR(24) NOT NULL DEFAULT 'active',target_goal_id BIGINT UNSIGNED NULL,started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),last_message_at DATETIME(3) NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),PRIMARY KEY(id),KEY idx_dialogue_session_user_status(user_id,status,last_message_at),CONSTRAINT fk_dialogue_session_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT ck_dialogue_session_status CHECK(status IN ('active','closed','archived'))) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS dialogue_message (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,session_id BIGINT UNSIGNED NOT NULL,user_id BIGINT UNSIGNED NULL,role VARCHAR(16) NOT NULL,content LONGTEXT NOT NULL,reply_to_message_id BIGINT UNSIGNED NULL,llm_call_id BIGINT UNSIGNED NULL,profile_extracted TINYINT NOT NULL DEFAULT 0,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),KEY idx_dialogue_message_session(session_id,created_at),KEY idx_dialogue_message_user(user_id,created_at),CONSTRAINT fk_dialogue_message_session FOREIGN KEY(session_id) REFERENCES dialogue_session(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_dialogue_message_user FOREIGN KEY(user_id) REFERENCES sys_user(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_dialogue_message_reply FOREIGN KEY(reply_to_message_id) REFERENCES dialogue_message(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT fk_dialogue_message_call FOREIGN KEY(llm_call_id) REFERENCES qb_llm_call(id) ON DELETE RESTRICT ON UPDATE RESTRICT,CONSTRAINT ck_dialogue_message_role CHECK(role IN ('user','assistant','system','tool'))) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS migration_release_checkpoint(id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,release_code VARCHAR(64) NOT NULL,status VARCHAR(24) NOT NULL,verification_json JSON NOT NULL,created_by BIGINT UNSIGNED NULL,created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY(id),UNIQUE KEY uk_migration_release(release_code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS qb_competency_job_snapshot (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  source_platform VARCHAR(32) NOT NULL DEFAULT 'BOSS',
+  source_url VARCHAR(500) NOT NULL,
+  source_job_key VARCHAR(128) NULL,
+  title VARCHAR(255) NOT NULL,
+  dimension VARCHAR(64) NOT NULL,
+  skill VARCHAR(255) NULL,
+  location VARCHAR(128) NULL,
+  salary VARCHAR(128) NULL,
+  experience VARCHAR(128) NULL,
+  education VARCHAR(128) NULL,
+  company VARCHAR(255) NULL,
+  description VARCHAR(1000) NULL,
+  tags_json TEXT NULL,
+  source_updated_at DATETIME(3) NULL,
+  last_seen_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  availability_status VARCHAR(32) NOT NULL DEFAULT 'active',
+  sync_version BIGINT UNSIGNED NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  is_deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_competency_job_source_url (source_url),
+  KEY idx_competency_job_dimension (dimension, availability_status, is_deleted),
+  KEY idx_competency_job_source_key (source_job_key),
+  KEY idx_competency_job_updated (updated_at, availability_status, is_deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS qb_competency_job_sync_record (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  trigger_type VARCHAR(32) NOT NULL,
+  trigger_by BIGINT UNSIGNED NULL,
+  platform VARCHAR(32) NOT NULL DEFAULT 'BOSS',
+  status VARCHAR(32) NOT NULL,
+  keyword_count INT NOT NULL DEFAULT 0,
+  city_count INT NOT NULL DEFAULT 0,
+  fetched_candidate_count INT NOT NULL DEFAULT 0,
+  success_count INT NOT NULL DEFAULT 0,
+  failure_count INT NOT NULL DEFAULT 0,
+  offline_count INT NOT NULL DEFAULT 0,
+  error_message VARCHAR(1000) NULL,
+  started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  finished_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  is_deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_competency_sync_started (started_at, status, is_deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
 

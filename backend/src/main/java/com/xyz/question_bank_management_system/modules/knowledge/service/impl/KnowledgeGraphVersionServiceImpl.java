@@ -55,16 +55,22 @@ public class KnowledgeGraphVersionServiceImpl implements KnowledgeGraphVersionSe
         if (!"DRAFT".equals(version.getStatus())) throw BizException.of(ErrorCode.CONFLICT,"仅 DRAFT 或 REJECTED 图版本可覆盖关系");
         List<GraphVersionRelationRequest.RelationItem> items = request == null ? List.of() : request.getRelations();
         List<KnowledgeGraphVersionRelation> rows = new ArrayList<>();
+        Set<String> edgeKeys = new HashSet<>();
+        Set<String> relationCodes = new HashSet<>();
         int index = 0;
         for (GraphVersionRelationRequest.RelationItem item : items) {
             KnowledgePoint source = pointMapper.selectByIdAndCourse(item.getSourceKnowledgePointId(),version.getCourseId());
             KnowledgePoint target = pointMapper.selectByIdAndCourse(item.getTargetKnowledgePointId(),version.getCourseId());
             if (source == null || target == null) throw BizException.of(ErrorCode.PARAM_ERROR,"关系知识点不属于当前课程");
+            if (Objects.equals(item.getSourceKnowledgePointId(),item.getTargetKnowledgePointId())) throw BizException.of(ErrorCode.PARAM_ERROR,"关系不能形成自环：知识点 " + item.getSourceKnowledgePointId());
             String type = Objects.toString(item.getRelationType(),"").toUpperCase(Locale.ROOT);
             if (!TYPES.contains(type)) throw BizException.of(ErrorCode.PARAM_ERROR,"不支持的关系类型：" + type);
+            if (!edgeKeys.add(item.getSourceKnowledgePointId() + ":" + item.getTargetKnowledgePointId() + ":" + type))
+                throw BizException.of(ErrorCode.PARAM_ERROR,"同一图版本内存在重复关系：" + item.getSourceKnowledgePointId() + "->" + item.getTargetKnowledgePointId() + "/" + type);
             KnowledgeGraphVersionRelation row = new KnowledgeGraphVersionRelation();
             row.setCourseId(version.getCourseId()); row.setGraphVersionId(version.getId());
             row.setRelationCode(StringUtils.hasText(item.getRelationCode()) ? item.getRelationCode() : "rel_" + version.getId() + "_" + (++index));
+            if (!relationCodes.add(row.getRelationCode())) throw BizException.of(ErrorCode.PARAM_ERROR,"关系编码重复：" + row.getRelationCode());
             row.setSourceKnowledgePointId(item.getSourceKnowledgePointId()); row.setTargetKnowledgePointId(item.getTargetKnowledgePointId());
             row.setRelationType(type); row.setWeight(normalize(item.getWeight(),BigDecimal.ONE));
             row.setConfidence(normalize(item.getConfidence(),BigDecimal.ONE)); row.setSourceType(Objects.toString(item.getSourceType(),"TEACHER_CONFIRMED"));

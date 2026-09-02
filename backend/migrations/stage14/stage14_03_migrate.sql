@@ -1,2 +1,0 @@
-INSERT INTO course_completion_policy(course_id,rule_version,mastery_threshold,confidence_threshold,required_completion_rate,status) SELECT id,'course_completion_v1',0.8000,0.6000,0.9000,'ACTIVE' FROM course WHERE is_deleted=0 ON DUPLICATE KEY UPDATE course_id=course_id;
--- Goal-to-course requirements are pedagogical configuration and are intentionally not inferred from labels. Populate them through reviewed administration data.

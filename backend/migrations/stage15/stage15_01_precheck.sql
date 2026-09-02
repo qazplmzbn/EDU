@@ -1,2 +1,0 @@
-SELECT 'interaction_sequence_gap_summary' check_name,user_id,course_id,MIN(interaction_seq) min_seq,MAX(interaction_seq) max_seq,COUNT(*) row_count FROM resource_interaction GROUP BY user_id,course_id HAVING MIN(interaction_seq)<>1 OR MAX(interaction_seq)<>COUNT(*);
-SELECT 'invalid_interaction_feature' check_name,COUNT(*) problem_count FROM resource_interaction WHERE score_normalized NOT BETWEEN 0 AND 1 OR question_difficulty NOT BETWEEN 0 AND 1;

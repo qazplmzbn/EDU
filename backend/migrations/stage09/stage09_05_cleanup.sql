@@ -1,1 +1,0 @@
-SET @stage09_cleanup_confirmed=COALESCE(@stage09_cleanup_confirmed,0);SELECT IF(@stage09_cleanup_confirmed=1,'Approval recorded; retire text-only preference reads after release.','BLOCKED: legacy profile columns remain for compatibility.') cleanup_status;

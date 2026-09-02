@@ -1,4 +1,0 @@
-SELECT 'hidden_leak_candidate' check_name,COUNT(*) problem_count FROM resource_item WHERE visibility='HIDDEN_UNTIL_ASSESSMENT' AND status='ACTIVE' AND generated_question_code IS NULL;
-SELECT 'profile_version_not_monotonic' check_name,COUNT(*) problem_count FROM (SELECT user_id,course_id,COUNT(*) c,COUNT(DISTINCT profile_version)d FROM student_profile_snapshot WHERE course_id IS NOT NULL GROUP BY user_id,course_id HAVING c<>d)x;
-SELECT 'trace_missing' check_name,(SELECT COUNT(*) FROM resource_interaction WHERE correlation_id IS NULL)+(SELECT COUNT(*) FROM resource_bundle WHERE correlation_id IS NULL)+(SELECT COUNT(*) FROM learning_path_version WHERE correlation_id IS NULL) problem_count;
-SELECT 'release_checkpoint_missing' check_name,COUNT(*) problem_count FROM migration_release_checkpoint WHERE release_code='personalized_loop_stage08_16' AND status<>'READY_FOR_VERIFY';

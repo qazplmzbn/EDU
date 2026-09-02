@@ -49,13 +49,41 @@ public class ProfileAggregationServiceImpl implements ProfileAggregationService 
 
     @Override @Transactional
     public StudentProfileSnapshot recalibrate(Long userId, Long courseId, List<ValidatedInteraction> history) {
+        if (userId == null || courseId == null) {
+            throw new IllegalArgumentException("userId and courseId are required");
+        }
+        List<ValidatedInteraction> interactions = history == null ? List.of() : history.stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(item -> Objects.requireNonNullElse(item.getInteractionSeq(), 0L)))
+                .toList();
+        for (ValidatedInteraction interaction : interactions) {
+            if (!Objects.equals(userId, interaction.getUserId()) || !Objects.equals(courseId, interaction.getCourseId())) {
+                throw new IllegalArgumentException("recalibration history contains another student or course");
+            }
+        }
+
         StudentProfileSnapshot latest = snapshotMapper.selectLatestForUpdate(userId, courseId);
         long next = latest == null ? 1 : Objects.requireNonNullElse(latest.getProfileVersion(), 0L) + 1;
+        Set<Long> knowledgePointIds = new LinkedHashSet<>();
+        for (ValidatedInteraction interaction : interactions) {
+            knowledgePointIds.addAll(interaction.getKnowledgeWeights().keySet());
+        }
+        for (Long knowledgePointId : knowledgePointIds) {
+            StudentKnowledgeState previous = stateMapper.selectForUpdate(userId, courseId, knowledgePointId);
+            StudentKnowledgeState initial = previous == null ? initial(userId, courseId, knowledgePointId) : previous;
+            StudentKnowledgeState recalibrated = stateService.recalibrate(initial, interactions);
+            stateMapper.upsertVersioned(recalibrated);
+        }
         return snapshot(userId, courseId, next, null, "RECALIBRATE");
     }
 
     private StudentKnowledgeState initial(ValidatedInteraction interaction, Long kp) {
         StudentKnowledgeState value = new StudentKnowledgeState(); value.setUserId(interaction.getUserId()); value.setCourseId(interaction.getCourseId()); value.setKnowledgePointId(kp);
+        value.setMasteryValue(new BigDecimal("0.30")); value.setConfidence(BigDecimal.ZERO); value.setEvidenceCount(0); value.setAttemptCount(0); value.setCorrectCount(0); value.setStateVersion(0L); value.setLastInteractionSeq(0L); return value;
+    }
+
+    private StudentKnowledgeState initial(Long userId, Long courseId, Long knowledgePointId) {
+        StudentKnowledgeState value = new StudentKnowledgeState(); value.setUserId(userId); value.setCourseId(courseId); value.setKnowledgePointId(knowledgePointId);
         value.setMasteryValue(new BigDecimal("0.30")); value.setConfidence(BigDecimal.ZERO); value.setEvidenceCount(0); value.setAttemptCount(0); value.setCorrectCount(0); value.setStateVersion(0L); value.setLastInteractionSeq(0L); return value;
     }
 

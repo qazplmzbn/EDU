@@ -9,6 +9,11 @@ import org.springframework.stereotype.Service;
 @ConditionalOnProperty(prefix="app.outbox",name="enabled",havingValue="true")
 public class OutboxPublisherImpl implements OutboxPublisher {
  private final PersonalizedResourceMapper mapper;
+ /**
+  * Resource interactions are consumed synchronously by ProfileEvidenceConsumer.
+  * Until an external transport is introduced, this scheduler must never claim
+  * that an unconsumed event was published.
+  */
  @Override @Scheduled(fixedDelayString="${app.outbox.publish-delay-ms:5000}")
- public int publishPending(){int n=0;for(var e:mapper.pendingOutbox(100))n+=mapper.markOutboxPublished(e.getId());return n;}
+ public int publishPending(){return 0;}
 }

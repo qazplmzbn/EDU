@@ -8,9 +8,13 @@ public final class HashUtil {
     private HashUtil() {}
 
     public static String sha256(String text) {
+        return sha256(text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static String sha256(byte[] bytes) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] dig = md.digest(text.getBytes(StandardCharsets.UTF_8));
+            byte[] dig = md.digest(bytes);
             StringBuilder sb = new StringBuilder();
             for (byte b : dig) {
                 sb.append(String.format("%02x", b));

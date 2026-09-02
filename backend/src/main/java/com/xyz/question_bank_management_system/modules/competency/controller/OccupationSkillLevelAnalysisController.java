@@ -33,4 +33,10 @@ public class OccupationSkillLevelAnalysisController {
                                                                  @RequestParam(defaultValue = "20") int limit) {
         return ApiResponse.ok(service.list(occupationId, limit));
     }
+
+    @PostMapping("/{occupationId}/skill-level-analyses/{batchCode}/publish-consensus")
+    public ApiResponse<Void> publishConsensus(@PathVariable Long occupationId, @PathVariable String batchCode) {
+        service.publishConsensus(occupationId, batchCode, SecurityContextUtil.getUserId());
+        return ApiResponse.ok();
+    }
 }

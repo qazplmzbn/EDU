@@ -1,2 +1,0 @@
-SELECT 'active_path_without_steps' check_name,COUNT(*) problem_count FROM learning_path_version v LEFT JOIN learning_path_item i ON i.path_version_id=v.id WHERE v.status='ACTIVE' GROUP BY v.id HAVING COUNT(i.id)=0;
-SELECT 'path_step_cross_course' check_name,COUNT(*) problem_count FROM learning_path_item i JOIN learning_path_version v ON v.id=i.path_version_id JOIN learning_path p ON p.id=v.path_id JOIN knowledge_point k ON k.id=i.knowledge_point_id WHERE k.course_id<>p.course_id;

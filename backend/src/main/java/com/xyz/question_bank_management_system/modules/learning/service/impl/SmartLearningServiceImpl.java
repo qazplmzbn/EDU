@@ -226,12 +226,25 @@ public class SmartLearningServiceImpl implements SmartLearningService {
         resource.setDifficulty(request.getDifficulty());
         resource.setGenerationType(text(request.getGenerationType(), "manual"));
         resource.setVersion(request.getVersion());
-        resource.setPersonalizationBasis(request.getPersonalizationBasis());
-        resource.setReviewReportJson(request.getReviewReportJson());
-        resource.setModelSourceJson(request.getModelSourceJson());
+        resource.setPersonalizationBasis(validJsonOrNull(request.getPersonalizationBasis(), "personalizationBasis"));
+        resource.setReviewReportJson(validJsonOrNull(request.getReviewReportJson(), "reviewReportJson"));
+        resource.setModelSourceJson(validJsonOrNull(request.getModelSourceJson(), "modelSourceJson"));
         resource.setAuditStatus(text(request.getAuditStatus(), "manual"));
         resource.setAgentTaskId(request.getAgentTaskId());
         return resource;
+    }
+
+    private String validJsonOrNull(String value, String fieldName) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String json = value.trim();
+        try {
+            objectMapper.readTree(json);
+            return json;
+        } catch (Exception ex) {
+            throw BizException.of(ErrorCode.PARAM_ERROR, fieldName + " must be valid JSON");
+        }
     }
 
     private void replaceResourceKnowledge(Long resourceId, List<Long> knowledgePointIds) {

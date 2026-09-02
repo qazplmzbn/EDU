@@ -1,3 +1,0 @@
-SELECT 'stage18_tables_missing' check_name,3-COUNT(*) problem_count FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN('course_graph_import','course_graph_import_issue','knowledge_point_legacy_mapping');
-SELECT 'multiple_active_graphs' check_name,COUNT(*) problem_count FROM (SELECT course_id FROM knowledge_graph_version WHERE status='ACTIVE' GROUP BY course_id HAVING COUNT(*)>1)x;
-SELECT 'approved_import_with_error' check_name,COUNT(*) problem_count FROM course_graph_import i WHERE i.status='APPROVED' AND EXISTS(SELECT 1 FROM course_graph_import_issue x WHERE x.import_id=i.id AND x.severity='ERROR' AND x.resolved=0);

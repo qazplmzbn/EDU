@@ -1,1 +1,0 @@
-SET @stage10_cleanup_confirmed=COALESCE(@stage10_cleanup_confirmed,0);SELECT IF(@stage10_cleanup_confirmed=1,'Approval recorded; drop mixed item columns after Stage 16 verification.','BLOCKED: legacy mixed path columns retained.') cleanup_status;

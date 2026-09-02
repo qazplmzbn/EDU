@@ -80,3 +80,6 @@ tmp/
 # Local handoff notes and browser automation artifacts
 /交接文档.md
 /.playwright-cli/
+
+# Claude Code local settings
+.claude/settings.local.json

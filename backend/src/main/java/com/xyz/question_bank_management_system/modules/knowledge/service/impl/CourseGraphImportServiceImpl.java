@@ -94,6 +94,13 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
         LegacyReferenceBaseline legacyBaseline = legacyBridge ? captureLegacyReferences() : null;
         Course course = requireOrCreateDraftCourse(analysis.view());
         record.setCourseId(course.getId());
+        // Retire legacy bridge rows before inserting imported points.  The old
+        // implementation did this afterwards, so an empty/rehearsal database
+        // could assign a legacy numeric id to a newly imported point and then
+        // disable that new point by mistake.
+        if (legacyBridge) {
+            archiveLegacy(record.getId());
+        }
 
         Map<String,CourseChapter> chapters = insertChapters(course.getId(),analysis.normalized());
         Map<String,KnowledgePoint> points = insertPoints(course.getId(),chapters,analysis.normalized(),analysis.view().getNormalizedHash());
@@ -105,7 +112,6 @@ public class CourseGraphImportServiceImpl implements CourseGraphImportService {
         insertRelationEvidence(source,version,relations,analysis.normalized(),analysis.view().getSourceFileHash());
 
         if (legacyBridge) {
-            archiveLegacy(record.getId());
             verifyLegacyReferences(legacyBaseline);
         }
         record.setGraphVersionId(version.getId());

@@ -29,6 +29,9 @@ public interface CareerRecommendationMapper {
     @Select({"<script>", "SELECT c.id AS course_id,c.course_code,c.course_name,sk.skill_id,sk.knowledge_point_id,ck.is_core AS course_core,sk.requirement_type AS mapping_type,ck.coverage_weight FROM course c JOIN course_knowledge ck ON ck.course_id=c.id JOIN skill_knowledge sk ON sk.knowledge_point_id=ck.knowledge_point_id WHERE c.status='active' AND c.is_deleted=0 AND sk.skill_id IN <foreach collection='skillIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>", "</script>"})
     List<CareerCourseCoverage> selectCourseCoverage(@Param("skillIds") List<Long> skillIds);
 
+    @Select({"<script>", "SELECT ck.knowledge_point_id FROM course_knowledge ck WHERE ck.course_id=#{courseId} AND ck.knowledge_point_id IN <foreach collection='knowledgePointIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> ORDER BY ck.is_core DESC,COALESCE(ck.coverage_weight,0) DESC,ck.sequence_no,ck.knowledge_point_id", "</script>"})
+    List<Long> selectRecommendationTargets(@Param("courseId") Long courseId, @Param("knowledgePointIds") List<Long> knowledgePointIds);
+
     @Insert("INSERT INTO career_course_recommendation_snapshot(snapshot_code,gap_snapshot_code,user_id,occupation_id,target_batch_code,profile_version,graph_versions_json,skill_state_version,course_catalog_hash,algorithm_version,status,request_json,result_summary_json,correlation_id,created_at) VALUES(#{snapshotCode},#{gapSnapshotCode},#{userId},#{occupationId},#{targetBatchCode},NULL,NULL,#{algorithmVersion},NULL,#{algorithmVersion},'READY',#{requestJson},#{resultSummaryJson},#{snapshotCode},NOW(3))")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertRecommendationSnapshot(CareerRecommendationSnapshot snapshot);

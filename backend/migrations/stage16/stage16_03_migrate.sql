@@ -1,2 +1,0 @@
-INSERT INTO migration_release_checkpoint(release_code,status,verification_json,created_at) VALUES('personalized_loop_stage08_16','VERIFYING',JSON_OBJECT('stages',JSON_ARRAY(8,9,10,11,12,13,14,15,16)),NOW(3)) ON DUPLICATE KEY UPDATE release_code=release_code;
-UPDATE migration_release_checkpoint SET status='READY_FOR_VERIFY',verification_json=JSON_SET(verification_json,'$.verificationPending',TRUE) WHERE release_code='personalized_loop_stage08_16';

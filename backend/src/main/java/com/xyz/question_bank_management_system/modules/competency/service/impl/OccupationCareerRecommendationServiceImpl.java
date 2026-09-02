@@ -18,6 +18,7 @@ import com.xyz.question_bank_management_system.modules.competency.vo.CareerRecom
 import com.xyz.question_bank_management_system.modules.agent.service.ResourceUnitService;
 import com.xyz.question_bank_management_system.modules.agent.entity.ResourceUnit;
 import com.xyz.question_bank_management_system.modules.course.service.PathRefreshApplicationService;
+import com.xyz.question_bank_management_system.modules.knowledge.mapper.KnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.profile.mapper.StudentResumeMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,7 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
     private final PathRefreshApplicationService pathRefreshApplicationService;
     private final StudentResumeMapper studentResumeMapper;
     private final ResourceUnitService resourceUnitService;
+    private final KnowledgePointMapper knowledgePointMapper;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -54,6 +56,18 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         String batchCode = text(request.getBatchCode());
         if (batchCode == null) throw BizException.of(ErrorCode.PARAM_ERROR, "batchCode is required");
         String version = defaultText(request.getLevelVersion(), "job_skill_level_v1");
+        List<OccupationSkill> universe = occupationSkillMapper.selectByOccupationIdForUpdate(occupationId);
+        Set<String> requestedKeys = new HashSet<>();
+        if (request.getItems() == null || request.getItems().isEmpty()) throw BizException.of(ErrorCode.PARAM_ERROR, "items are required");
+        for (OccupationSkillStandardPublishRequest.Item item : request.getItems()) {
+            String key = item.getSkillId() + ":" + defaultText(item.getRequirementType(), "essential");
+            if (!requestedKeys.add(key)) throw BizException.of(ErrorCode.PARAM_ERROR, "duplicate occupation skill standard item");
+        }
+        if (!universe.isEmpty()) {
+            Set<String> existingKeys = new HashSet<>();
+            for (OccupationSkill row : universe) existingKeys.add(row.getSkillId() + ":" + row.getRequirementType());
+            if (!existingKeys.equals(requestedKeys)) throw BizException.of(ErrorCode.CONFLICT, "standard publication must include the complete locked occupation skill universe");
+        }
         for (OccupationSkillStandardPublishRequest.Item item : request.getItems()) {
             if (item.getSkillId() == null || skillMapper.selectById(item.getSkillId()) == null) {
                 throw BizException.of(ErrorCode.NOT_FOUND, "skill not found: " + item.getSkillId());
@@ -87,7 +101,11 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         String batchCode = singleBatch(requirements);
         for (CareerSkillRequirement requirement : requirements) {
             CareerStudentSkillState state = states.get(requirement.getSkillId());
-            BigDecimal current = state == null ? ZERO : state.getProficiencyValue();
+            BigDecimal aggregate = state == null ? ZERO : defaultDecimal(state.getProficiencyValue(), ZERO);
+            BigDecimal core = state == null ? aggregate : defaultDecimal(state.getCoreProficiencyValue(), aggregate);
+            // Core knowledge is a prerequisite floor for usable skill proficiency.
+            // For a skill without core mappings aggregateOne stores aggregate again.
+            BigDecimal current = aggregate.min(core);
             BigDecimal confidence = state == null ? ZERO : state.getConfidence();
             BigDecimal gap = positive(requirement.getRequiredLevel().subtract(current));
             BigDecimal typeFactor = "optional".equalsIgnoreCase(requirement.getRequirementType()) ? new BigDecimal("0.60") : ONE;
@@ -119,7 +137,8 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         if (occupationId == null) throw BizException.of(ErrorCode.PARAM_ERROR, "occupationId is required");
         CareerGapVO gaps = refreshGaps(userId, occupationId);
         List<StudentOccupationSkillGap> rows = mapper.selectGapsBySnapshot(gaps.getSnapshotCode());
-        List<StudentOccupationSkillGap> targetGaps = rows.stream().filter(g -> g.getGapValue().signum() > 0).toList();
+        List<StudentOccupationSkillGap> targetGaps = rows.stream().filter(g -> "GAP".equals(g.getGapStatus()) && g.getGapValue().signum() > 0).toList();
+        long unknownGapCount = rows.stream().filter(g -> "UNKNOWN".equals(g.getGapStatus()) && g.getGapValue().signum() > 0).count();
         String snapshotCode = code("REC");
         String batchCode = gaps.getTargetBatchCode();
         List<Candidate> candidates = rankCourses(targetGaps);
@@ -129,10 +148,13 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         snapshot.setSnapshotCode(snapshotCode); snapshot.setGapSnapshotCode(gaps.getSnapshotCode()); snapshot.setUserId(userId);
         snapshot.setOccupationId(occupationId); snapshot.setTargetBatchCode(batchCode); snapshot.setAlgorithmVersion(RECOMMENDATION_ALGORITHM);
         snapshot.setRequestJson(json(Map.of("occupationId", occupationId, "limit", limit)));
+        String dataStatus = candidates.isEmpty() ? (unknownGapCount > 0 ? "DIAGNOSTIC_REQUIRED" : "NO_ACTIVE_COURSE_COVERAGE") : "READY";
         snapshot.setResultSummaryJson(json(Map.of(
                 "gapCount", targetGaps.size(),
+                "unknownGapCount", unknownGapCount,
                 "recommendationCount", candidates.size(),
-                "dataStatus", candidates.isEmpty() ? "NO_ACTIVE_COURSE_COVERAGE" : "READY")));
+                "dataStatus", dataStatus,
+                "fallback", candidates.isEmpty() ? "DIAGNOSTIC_TARGETS" : "NONE")));
         mapper.insertRecommendationSnapshot(snapshot);
         int rank = 1;
         for (Candidate candidate : candidates) {
@@ -169,9 +191,12 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         if (existing != null) return Map.of("snapshotCode", snapshotCode, "courseId", courseId, "pathCode", existing.getLearningPathCode(), "status", existing.getStatus());
         CareerRecommendationItem item = mapper.selectRecommendationItem(snapshotCode, userId, courseId);
         if (item == null) throw BizException.of(ErrorCode.NOT_FOUND, "recommended course not found");
-        List<Long> targetIds = readList(item.getCoveredKnowledgePointIdsJson());
+        List<Long> targetIds = readList(item.getCoveredKnowledgePointIdsJson()).stream().distinct().sorted().toList();
         if (targetIds.isEmpty()) throw BizException.of(ErrorCode.CONFLICT, "recommendation has no target knowledge point");
-        Map<String, Object> path = pathRefreshApplicationService.create(userId, courseId, targetIds.get(0), "career-accept-" + snapshotCode + "-" + courseId);
+        Long target = mapper.selectRecommendationTargets(courseId, targetIds).stream()
+                .filter(id -> knowledgePointMapper.selectActiveByIdAndCourse(id, courseId) != null).findFirst().orElse(null);
+        if (target == null) throw BizException.of(ErrorCode.CONFLICT, "recommended course has no target in its current ACTIVE graph");
+        Map<String, Object> path = pathRefreshApplicationService.create(userId, courseId, target, "career-accept-" + snapshotCode + "-" + courseId);
         CareerRecommendationAcceptance acceptance = new CareerRecommendationAcceptance();
         acceptance.setSnapshotId(snapshot.getId()); acceptance.setUserId(userId); acceptance.setCourseId(courseId);
         acceptance.setLearningPathCode(String.valueOf(path.get("pathCode"))); acceptance.setStatus("ACCEPTED");
@@ -198,12 +223,13 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         String gapCode = mapper.selectLatestGapSnapshotCode(userId, occupationId);
         if (gapCode == null) return List.of();
         return mapper.selectGapsBySnapshot(gapCode).stream()
-                .filter(gap -> "UNKNOWN".equals(gap.getGapStatus()) && gap.getGapValue().signum() > 0)
+                .filter(gap -> gap.getGapValue().signum() > 0)
+                .filter(gap -> "UNKNOWN".equals(gap.getGapStatus()) || mapper.selectCourseCoverage(List.of(gap.getSkillId())).isEmpty())
                 .map(gap -> Map.<String, Object>of(
                         "skillId", gap.getSkillId(),
                         "skillName", gap.getSkillName(),
                         "priorityScore", gap.getPriorityScore(),
-                        "knowledgePointIds", skillKnowledgeMapper.selectBySkillId(gap.getSkillId()).stream().map(item -> item.getKnowledgePointId()).toList(),
+                        "knowledgePointIds", skillKnowledgeMapper.selectBySkillId(gap.getSkillId()).stream().map(item -> item.getKnowledgePointId()).distinct().sorted().toList(),
                         "reason", "职业证据不足，建议先进行课程内诊断"))
                 .toList();
     }
@@ -218,8 +244,10 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
     }
 
     private List<CareerSkillRequirement> publishedRequirements(Long occupationId) {
+        List<OccupationSkill> universe = occupationSkillMapper.selectByOccupationId(occupationId);
+        if (universe.isEmpty()) throw BizException.of(ErrorCode.TARGET_STANDARD_INCOMPLETE, "occupation has no skill universe");
         List<CareerSkillRequirement> requirements = mapper.selectPublishedRequirements(occupationId);
-        if (requirements.isEmpty()) throw BizException.of(ErrorCode.TARGET_STANDARD_INCOMPLETE, "occupation has no published skill standard");
+        if (requirements.size() != universe.size()) throw BizException.of(ErrorCode.TARGET_STANDARD_INCOMPLETE, "occupation has unpublished required skill levels");
         singleBatch(requirements);
         return requirements;
     }
@@ -258,17 +286,18 @@ public class OccupationCareerRecommendationServiceImpl implements OccupationCare
         state.setUserId(userId); state.setSkillId(skillId); state.setProficiencyValue(scale(proficiency)); state.setCoreProficiencyValue(scale(core));
         state.setConfidence(scale(divide(totalConfidence, totalWeight))); state.setKnowledgeCoverageRate(scale(evidence.isEmpty() ? ZERO : BigDecimal.valueOf(covered).divide(BigDecimal.valueOf(evidence.size()), 4, RoundingMode.HALF_UP)));
         state.setEvidenceCount(evidenceCount); state.setCalculationVersion(SKILL_ALGORITHM);
-        state.setProficiencyLevel(proficiency.compareTo(new BigDecimal("0.80")) >= 0 ? "ADVANCED" : proficiency.compareTo(new BigDecimal("0.50")) >= 0 ? "INTERMEDIATE" : "BEGINNER");
+        BigDecimal effective = proficiency.min(core);
+        state.setProficiencyLevel(effective.compareTo(new BigDecimal("0.80")) >= 0 ? "ADVANCED" : effective.compareTo(new BigDecimal("0.50")) >= 0 ? "INTERMEDIATE" : "BEGINNER");
         return state;
     }
 
     private List<Candidate> rankCourses(List<StudentOccupationSkillGap> gaps) {
         if (gaps.isEmpty()) return List.of();
-        Map<Long, BigDecimal> priorities = new HashMap<>();
-        for (StudentOccupationSkillGap gap : gaps) priorities.put(gap.getSkillId(), gap.getPriorityScore());
+        Map<Long, BigDecimal> priorities = new TreeMap<>();
+        for (StudentOccupationSkillGap gap : gaps) priorities.merge(gap.getSkillId(), gap.getPriorityScore(), BigDecimal::max);
         BigDecimal total = priorities.values().stream().reduce(ZERO, BigDecimal::add);
         if (total.signum() == 0) return List.of();
-        Map<Long, Candidate> byCourse = new HashMap<>();
+        Map<Long, Candidate> byCourse = new TreeMap<>();
         for (CareerCourseCoverage coverage : mapper.selectCourseCoverage(new ArrayList<>(priorities.keySet()))) {
             Candidate candidate = byCourse.computeIfAbsent(coverage.getCourseId(), ignored -> new Candidate(coverage));
             candidate.skillIds.add(coverage.getSkillId()); candidate.knowledgePointIds.add(coverage.getKnowledgePointId());

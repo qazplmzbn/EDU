@@ -6,6 +6,8 @@ import com.xyz.question_bank_management_system.modules.bank.mapper.QbGradingReco
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgePointMapper;
 import com.xyz.question_bank_management_system.modules.knowledge.mapper.QbKnowledgeRelationMapper;
 import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceRecommendRequest;
+import com.xyz.question_bank_management_system.modules.learning.dto.LearningResourceUpsertRequest;
+import com.xyz.question_bank_management_system.exception.BizException;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResource;
 import com.xyz.question_bank_management_system.modules.learning.entity.QbLearningResourceTarget;
 import com.xyz.question_bank_management_system.modules.learning.mapper.QbLearningBehaviorMapper;
@@ -30,6 +32,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -81,5 +85,19 @@ class SmartLearningResourceTargetServiceTest {
         assertEquals(11L, saved.get(0).getClassId());
         assertNull(saved.get(0).getStudentId());
         assertEquals(2, result.getTargetCount());
+    }
+
+    @Test
+    void createResourceRejectsInvalidJsonBeforeDatabaseInsert() {
+        SmartLearningServiceImpl service = new SmartLearningServiceImpl(
+                knowledgePointMapper, resourceMapper, behaviorMapper, knowledgeStateMapper, profileService,
+                attemptMapper, llmCallMapper, gradingRecordMapper, knowledgeRelationMapper, pathSnapshotMapper,
+                targetMapper, resourceKnowledgeMapper, classMemberMapper, classMapper, llmService, new ObjectMapper());
+        LearningResourceUpsertRequest request = new LearningResourceUpsertRequest();
+        request.setTitle("fixture");
+        request.setPersonalizationBasis("not-json");
+
+        assertThrows(BizException.class, () -> service.createResource(request, 5L));
+        verify(resourceMapper, never()).insert(org.mockito.ArgumentMatchers.any());
     }
 }

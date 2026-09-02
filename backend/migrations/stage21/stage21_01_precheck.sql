@@ -1,1 +1,0 @@
-SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('occupation','skill','course','knowledge_point','career_mapping_import_batch','career_mapping_import_row','career_mapping_review_decision');

@@ -16,6 +16,7 @@ import com.xyz.question_bank_management_system.modules.bank.service.StudentAssis
 import com.xyz.question_bank_management_system.modules.bank.vo.StudentAssistantChatVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
@@ -38,6 +39,7 @@ public class StudentAssistantServiceImpl implements StudentAssistantService {
     private final DialogueMapper dialogueMapper;
 
     @Override
+    @Transactional
     public StudentAssistantChatVO chat(Long userId, StudentAssistantChatRequest request) {
         String message = request == null ? "" : request.getMessage();
         if (!StringUtils.hasText(message)) {
@@ -60,6 +62,9 @@ public class StudentAssistantServiceImpl implements StudentAssistantService {
                 request.getProviderKey(),
                 userId
         );
+        if (!Objects.equals(call.getCallStatus(), 1)) {
+            throw BizException.of(ErrorCode.BIZ_ERROR, "Model call failed; please retry later");
+        }
 
         String content = llmService.extractContent(call.getResponseText());
         if (!StringUtils.hasText(content)) {

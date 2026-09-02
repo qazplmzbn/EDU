@@ -1,3 +1,0 @@
-SELECT 'duplicate_consumed_step' check_name,COUNT(*) problem_count FROM (SELECT path_step_id FROM resource_unit_step GROUP BY path_step_id HAVING COUNT(*)>1)x;
-SELECT 'unit_cross_path_version' check_name,COUNT(*) problem_count FROM resource_unit_step s JOIN resource_unit u ON u.id=s.resource_unit_id JOIN learning_path_item i ON i.id=s.path_step_id WHERE i.path_version_id<>u.path_version_id;
-SELECT 'course_without_capability' check_name,COUNT(*) problem_count FROM course c LEFT JOIN course_resource_capability x ON x.course_id=c.id AND x.enabled=1 WHERE c.is_deleted=0 GROUP BY c.id HAVING COUNT(x.id)=0;

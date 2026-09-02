@@ -1,2 +1,0 @@
-SELECT 'model_state_ahead_of_interactions' check_name,COUNT(*) problem_count FROM student_knowledge_model_state s LEFT JOIN (SELECT user_id,course_id,MAX(interaction_seq)m FROM resource_interaction GROUP BY user_id,course_id)i ON i.user_id=s.user_id AND i.course_id=s.course_id WHERE s.processed_through_seq>COALESCE(i.m,0);
-SELECT 'enabled_rollout_without_version' check_name,COUNT(*) problem_count FROM knowledge_model_rollout_policy WHERE enabled=1 AND (model_version='' OR knowledge_index_version='');

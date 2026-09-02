@@ -1,1 +1,0 @@
-INSERT INTO knowledge_model_rollout_policy(course_id,model_version,knowledge_index_version,rollout_percent,enabled,fallback_algorithm,config_json) VALUES(NULL,'dimkt_v1','knowledge_index_v1',0.0000,0,'weighted_bkt_elo_v1',JSON_OBJECT('activationGate','MODEL_ARTIFACT_AND_OFFLINE_EVAL_REQUIRED')) ON DUPLICATE KEY UPDATE model_version=model_version;

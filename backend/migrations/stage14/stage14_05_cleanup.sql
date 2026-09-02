@@ -1,1 +1,0 @@
-SET @stage14_cleanup_confirmed=COALESCE(@stage14_cleanup_confirmed,0);SELECT IF(@stage14_cleanup_confirmed=1,'No destructive cleanup required.','BLOCKED: eligibility snapshots are immutable audit records.') cleanup_status;

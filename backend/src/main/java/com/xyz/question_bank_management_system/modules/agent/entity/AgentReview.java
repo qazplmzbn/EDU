@@ -19,5 +19,17 @@ public class AgentReview {
     private BigDecimal sourceConsistencyScore;
     private String reviewStatus;
     private String reviewReport;
+    private Long bundleId;
+    private Long blueprintId;
+    private String reviewDimension;
+    private String issueCode;
+    private String repairTarget;
+    private String repairScope;
+    private String repairAction;
+    private String repairInstruction;
+    private Integer roundNo;
+    private String evidenceRefsJson;
+    private String toolResultJson;
+    private String reviewerRole;
     private LocalDateTime createdAt;
 }

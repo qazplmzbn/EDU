@@ -1,4 +1,0 @@
-SELECT 'interaction_non_published_bundle' check_name,COUNT(*) problem_count FROM resource_interaction i JOIN resource_bundle b ON b.id=i.resource_bundle_id WHERE b.status NOT IN('PUBLISHED','SUPERSEDED','STALE');
-SELECT 'interaction_metadata_mismatch' check_name,COUNT(*) problem_count FROM resource_interaction i JOIN resource_item ri ON ri.id=i.resource_item_id WHERE i.generated_question_code<>ri.generated_question_code OR i.question_difficulty<>ri.question_difficulty OR i.question_purpose<>ri.purpose;
-SELECT 'duplicate_evidence_consumption' check_name,COUNT(*) problem_count FROM (SELECT event_id,consumer_name FROM profile_evidence_event GROUP BY event_id,consumer_name HAVING COUNT(*)>1)x;
-SELECT 'outbox_without_interaction' check_name,COUNT(*) problem_count FROM outbox_event o LEFT JOIN resource_interaction i ON i.id=o.aggregate_id WHERE o.event_type='learning.interaction.submitted' AND i.id IS NULL;

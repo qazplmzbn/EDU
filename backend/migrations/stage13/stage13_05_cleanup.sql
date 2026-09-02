@@ -1,1 +1,0 @@
-SET @stage13_cleanup_confirmed=COALESCE(@stage13_cleanup_confirmed,0);SELECT IF(@stage13_cleanup_confirmed=1,'No resource interactions may be deleted; cleanup only expires release rows.','BLOCKED: interaction, evidence, decision and outbox rows are immutable.') cleanup_status;

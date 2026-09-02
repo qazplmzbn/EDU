@@ -1,1 +1,0 @@
-SET @stage11_cleanup_confirmed=COALESCE(@stage11_cleanup_confirmed,0);SELECT IF(@stage11_cleanup_confirmed=1,'No destructive cleanup required.','BLOCKED by default; ResourceUnit and Blueprint records are immutable audit data.') cleanup_status;

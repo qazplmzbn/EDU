@@ -181,7 +181,11 @@ public class AdminLlmModelServiceImpl implements AdminLlmModelService {
         provider.setKey(source.getProviderKey());
         provider.setLabel(source.getLabel());
         provider.setBaseUrl(source.getBaseUrl());
-        provider.setApiKey(secretCodec.decode(source.getApiKeyCipher()));
+        // LOCAL providers do not authenticate, so an old encrypted API key must
+        // not make an otherwise usable local fixture unavailable.
+        provider.setApiKey(TYPE_LOCAL.equalsIgnoreCase(source.getProviderType())
+                ? ""
+                : secretCodec.decode(source.getApiKeyCipher()));
         provider.setModel(source.getModel());
         provider.setTemperature(source.getTemperature());
         provider.setSupportsTemperature(Boolean.TRUE.equals(source.getSupportsTemperature()));

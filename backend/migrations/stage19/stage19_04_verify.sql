@@ -1,3 +1,0 @@
-SELECT 'approved_import_missing_graph' check_name,COUNT(*) problem_count FROM course_graph_import i LEFT JOIN knowledge_graph_version g ON g.id=i.graph_version_id WHERE i.status='APPROVED' AND g.id IS NULL;
-SELECT 'disabled_point_in_active_graph_relation' check_name,COUNT(*) problem_count FROM knowledge_relation r JOIN knowledge_graph_version g ON g.id=r.graph_version_id AND g.status='ACTIVE' JOIN knowledge_point s ON s.id=r.source_knowledge_point_id JOIN knowledge_point t ON t.id=r.target_knowledge_point_id WHERE s.status<>'ACTIVE' OR t.status<>'ACTIVE';
-SELECT 'release_checkpoint_missing' check_name,COUNT(*) problem_count FROM migration_release_checkpoint WHERE release_code='course_graph_import_stage17_19' AND status<>'READY_FOR_VERIFY';
