@@ -81,5 +81,16 @@ tmp/
 /交接文档.md
 /.playwright-cli/
 
+# Local acceptance artifacts (not part of final source delivery)
+/*.md
+!/README.md
+/PLAN.md
+/backend/FRONTEND_API.md
+/backend/scripts/generate_frontend_api_doc.ps1
+/backend/scripts/rehearsal_career_acceptance.ps1
+/data/
+/frontend/src/views/CareerLearningPathView.vue
+/frontend/src/views/CareerPlanView.vue
+
 # Claude Code local settings
 .claude/settings.local.json
