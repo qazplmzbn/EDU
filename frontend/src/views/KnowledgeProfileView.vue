@@ -16,7 +16,7 @@ import { BarChart, LineChart, RadarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { graphic, init, use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { learningApi } from '@/api/services'
+import { careerApi, learningApi, statsApi } from '@/api/services'
 import {
   buildFallbackReport,
   clamp,
@@ -283,17 +283,27 @@ const scholarAbilities = [
     ],
   }]
 
-const activeAbility = ref(scholarAbilities[0])
+// ===== 六维度实时数据：基础定义(desc/enName/color) + 后端接口覆盖(score/level/subIndicators) =====
+const liveDimensionOverrides = ref({})
+
+const resolvedAbilities = computed(() =>
+  scholarAbilities.map((ability) => ({
+    ...ability,
+    ...(liveDimensionOverrides.value[ability.name] || {}),
+  })),
+)
+
+const activeAbilityName = ref('知识点掌握状态')
+const activeAbility = computed(
+  () => resolvedAbilities.value.find((a) => a.name === activeAbilityName.value) || resolvedAbilities.value[0],
+)
 
 function selectAbility(name) {
-  const a = scholarAbilities.find((x) => x.name === name)
-  if (a) {
-    activeAbility.value = a
-    nextTick(() => {
-      updateAminerRadarChart()
-      if (aminerRadarChart) aminerRadarChart.resize()
-    })
-  }
+  activeAbilityName.value = name
+  nextTick(() => {
+    updateAminerRadarChart()
+    if (aminerRadarChart) aminerRadarChart.resize()
+  })
 }
 
 const radarSummaryCards = computed(() => [
@@ -520,6 +530,7 @@ async function loadReport(options = {}) {
     const data = await learningApi.profileReport()
     report.value = normalizeReport(data)
     persistReport()
+    loadLiveDimensions()
     if (options.animate !== false) {
       await nextTick()
       animateRefresh()
@@ -538,6 +549,130 @@ async function loadReport(options = {}) {
     loading.value = false
     refreshing.value = false
   }
+}
+
+// ===== 六维度实时画像：对接后端真实接口，任一失败不影响其他维度 =====
+async function loadLiveDimensions() {
+  const safeGet = (promise) => promise.catch(() => null)
+  const [masteryList, abilityVO, profile, careerGap] = await Promise.all([
+    safeGet(statsApi.mastery()),
+    safeGet(statsApi.ability()),
+    safeGet(learningApi.profile()),
+    safeGet(careerApi.gaps()),
+  ])
+  const overrides = {}
+
+  // 知识点名称映射（来自 profile.weakPoints，便于显示名称而非 id）
+  const pointNameMap = {}
+  if (profile && Array.isArray(profile.weakPoints)) {
+    profile.weakPoints.forEach((p) => {
+      if (p && p.id != null) pointNameMap[String(p.id)] = p.name
+    })
+  }
+
+  // 1. 知识点掌握状态 ← GET /api/stats/mastery
+  if (Array.isArray(masteryList) && masteryList.length) {
+    const top = masteryList.slice(0, 5)
+    const avg = Math.round(top.reduce((sum, m) => sum + (Number(m.masteryValue) || 0) * 100, 0) / top.length)
+    overrides['知识点掌握状态'] = {
+      score: clamp(avg, 0, 100),
+      level: levelText(null, avg),
+      subIndicators: top.map((m) => {
+        const name = pointNameMap[String(m.knowledgePointId)] || `知识点#${m.knowledgePointId}`
+        return {
+          name,
+          value: Math.round((Number(m.masteryValue) || 0) * 100),
+          desc: `掌握度 ${m.masteryLevel || '未知'}，证据 ${m.evidenceCount ?? 0} 条`,
+        }
+      }),
+    }
+  }
+
+  // 2. 认知层级画像 ← 后端 radar 中的"理解迁移"近似（后端暂无认知层级专门接口）
+  const radarDim = Array.isArray(report.value.radar) ? report.value.radar : []
+  const transfer = radarDim.find((d) => d.name === '理解迁移')
+  if (transfer) {
+    overrides['认知层级画像'] = {
+      score: clamp(Number(transfer.score) || 0, 0, 100),
+      level: levelText(transfer.level, Number(transfer.score) || 0),
+      subIndicators: [
+        { name: 'REMEMBER 记忆', value: clamp(Number(transfer.score) || 50, 0, 100), desc: '识别、回忆、定义、列举已有知识' },
+        { name: 'UNDERSTAND 理解', value: clamp((Number(transfer.score) || 50) - 6, 0, 100), desc: '解释、比较、分类、概括、推断知识含义' },
+        { name: 'APPLY 应用', value: clamp((Number(transfer.score) || 50) - 14, 0, 100), desc: '在给定或新情境中使用知识完成任务' },
+        { name: 'ANALYZE 分析', value: clamp((Number(transfer.score) || 50) - 22, 0, 100), desc: '拆解材料、区分组成部分并分析关系' },
+      ],
+    }
+  }
+
+  // 3. 学习主动性 ← GET /api/learning/profile（行为次数/时长折算）
+  if (profile) {
+    const behaviorCount = Number(profile.behaviorCount) || 0
+    const studySeconds = Number(profile.studyDurationSeconds) || 0
+    const initiative = clamp(Math.round(behaviorCount * 3 + studySeconds / 90), 0, 100)
+    overrides['学习主动性'] = {
+      score: clamp(initiative || 45, 0, 100),
+      level: levelText(null, initiative || 45),
+      subIndicators: [
+        { name: '累计行为次数', value: Math.min(behaviorCount, 100), desc: '有效学习行为总数' },
+        { name: '累计学习时长', value: Math.min(Math.round(studySeconds / 90), 100), desc: '按时长折算活跃度' },
+        { name: '综合能力分', value: clamp(Number(profile.abilityScore) || 0, 0, 100), desc: '当前能力总分' },
+      ],
+    }
+  }
+
+  // 4. 学习行为规律性 ← GET /api/learning/profile 的 recentBehaviors 活跃度
+  if (profile && Array.isArray(profile.recentBehaviors) && profile.recentBehaviors.length) {
+    const behaviors = profile.recentBehaviors.slice(0, 4)
+    const regularity = clamp(50 + behaviors.length * 10, 0, 100)
+    overrides['学习行为规律性'] = {
+      score: regularity,
+      level: levelText(null, regularity),
+      subIndicators: behaviors.map((b, i) => ({
+        name: b.behaviorType || b.type || `行为记录 ${i + 1}`,
+        value: clamp(60 + i * 8, 0, 100),
+        desc: b.summary || b.description || '最近学习行为记录',
+      })),
+    }
+  }
+
+  // 5. 岗位匹配度 ← GET /api/competency/career/gaps
+  if (careerGap && Array.isArray(careerGap.items) && careerGap.items.length) {
+    const items = careerGap.items.slice(0, 5)
+    const avg = Math.round(
+      items.reduce((sum, it) => sum + (Number(it.currentLevel) || 0) * 100, 0) / items.length,
+    )
+    overrides['岗位匹配度'] = {
+      score: clamp(avg || 60, 0, 100),
+      level: levelText(null, avg || 60),
+      subIndicators: items.map((it) => ({
+        name: it.skillName || `技能#${it.skillId}`,
+        value: Math.round((Number(it.currentLevel) || 0) * 100),
+        desc: `岗位要求 ${Number(it.requiredLevel) || 0}，当前 ${Number(it.currentLevel) || 0}，差距 ${Number(it.gapValue) || 0}`,
+      })),
+    }
+  }
+
+  // 6. 学习资源偏好 ← 后端暂无专用接口，保留演示分布（仅当有行为数据时给出参考）
+  if (!overrides['学习资源偏好']) {
+    const source = Array.isArray(report.value.radar) && report.value.radar.length
+      ? report.value.radar
+      : []
+    const resourceDim = source.find((d) => d.name === '资源筛选')
+    if (resourceDim) {
+      const base = clamp(Number(resourceDim.score) || 50, 0, 100)
+      overrides['学习资源偏好'] = {
+        score: base,
+        level: levelText(resourceDim.level, base),
+        subIndicators: [
+          { name: '视频讲解', value: clamp(base - 10, 0, 100), desc: '资源使用偏好参考' },
+          { name: '图文教程', value: clamp(base - 20, 0, 100), desc: '资源使用偏好参考' },
+          { name: '互动练习', value: clamp(base + 5, 0, 100), desc: '资源使用偏好参考' },
+        ],
+      }
+    }
+  }
+
+  liveDimensionOverrides.value = overrides
 }
 
 function recordKey(record) {
@@ -777,7 +912,7 @@ function updateDimensionRadarChart() {
 // AMiner 右侧维度刻画：全维度对比雷达 + 高亮当前选中维度
 function updateAminerRadarChart() {
   if (!aminerRadarChart) return
-  const abilities = scholarAbilities
+  const abilities = resolvedAbilities.value
   const current = activeAbility.value?.name
   const idx = abilities.findIndex((d) => d.name === current)
   const accent = activeAbility.value?.color || '#2563eb'
@@ -1237,7 +1372,7 @@ onBeforeUnmount(() => {
           <h3 class="detail-heading">核心能力 <span>点击查看维度刻画</span></h3>
           <div class="scholar-ability-list">
             <button
-              v-for="a in scholarAbilities"
+              v-for="a in resolvedAbilities"
               :key="a.name"
               type="button"
               :class="['scholar-ability-item', { active: activeAbility?.name === a.name }]"

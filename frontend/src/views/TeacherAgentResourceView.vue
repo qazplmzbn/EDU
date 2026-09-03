@@ -258,14 +258,78 @@ const lowestDimensions = computed(() =>
 // 每个分组的知识点落在对应扇区内。薄弱知识点按名称匹配后高亮展示。
 const kgViewBox = { width: 1600, height: 1000, cx: 800, cy: 500, groupRadius: 245, pointRadius: 410 }
 
+// ===== 真实图谱数据（后端 knowledge-points + knowledge-relations，失败/为空时回退本地模拟） =====
+const liveGraphData = ref(null)
+
+// 把后端扁平知识点列表映射为图谱的 center/groups/points 结构
+function buildLiveGraph(points, relations) {
+  const groupMap = new Map()
+  const pointMap = new Map()
+  const isGroupPoint = (p) => p.level === 1 || p.parentId == null || p.parentId === 0
+
+  points.forEach((p) => {
+    const id = String(p.id)
+    if (isGroupPoint(p) && !pointMap.has(id)) {
+      groupMap.set(id, { id, name: p.name, description: p.description || '' })
+    }
+  })
+
+  // 若没有章节级分组，用 chapterId 兜底分组
+  if (!groupMap.size) {
+    points.forEach((p) => {
+      const gid = String(p.chapterId || 'default')
+      if (!groupMap.has(gid)) groupMap.set(gid, { id: gid, name: p.chapterId ? `章节 ${p.chapterId}` : '默认章节' })
+    })
+  }
+
+  const groupIds = Array.from(groupMap.keys())
+  points.forEach((p) => {
+    const id = String(p.id)
+    if (groupMap.has(id) && isGroupPoint(p)) return
+    let gid = p.parentId != null && p.parentId !== 0 ? String(p.parentId) : (p.chapterId != null ? String(p.chapterId) : groupIds[0])
+    if (!groupMap.has(gid)) gid = groupIds[0]
+    if (!gid) return
+    pointMap.set(id, { id, name: p.name, groupId: gid, description: p.description || '' })
+  })
+
+  // 全部都是分组时，把分组降级成可展示的点
+  if (!pointMap.size) {
+    groupMap.forEach((g) => pointMap.set(g.id, { id: g.id, name: g.name, groupId: g.id, description: g.description || '' }))
+  }
+
+  return {
+    center: { id: 'center', name: '课程知识图谱' },
+    groups: Array.from(groupMap.values()),
+    points: Array.from(pointMap.values()),
+  }
+}
+
+async function loadLiveGraph() {
+  try {
+    const [points, relations] = await Promise.all([
+      learningApi.knowledgePoints().catch(() => []),
+      learningApi.knowledgeRelations().catch(() => []),
+    ])
+    if (!Array.isArray(points) || !points.length) return
+    const graph = buildLiveGraph(points, Array.isArray(relations) ? relations : [])
+    if (graph.groups.length && graph.points.length) {
+      liveGraphData.value = graph
+    }
+  } catch (error) {
+    // 后端无数据或未启动：继续使用本地 cLanguageKnowledgeGraph
+  }
+}
+
+const kgSource = computed(() => liveGraphData.value || cLanguageKnowledgeGraph)
+
 const kgCenter = computed(() => ({
-  id: cLanguageKnowledgeGraph.center.id,
-  name: 'C 语言核心',
+  id: kgSource.value.center.id,
+  name: kgSource.value.center.name,
 }))
 
 const kgGroups = computed(() =>
-  cLanguageKnowledgeGraph.groups.map((group, index) => {
-    const angle = -90 + (360 / cLanguageKnowledgeGraph.groups.length) * index
+  kgSource.value.groups.map((group, index) => {
+    const angle = -90 + (360 / kgSource.value.groups.length) * index
     const rad = (Math.PI / 180) * angle
     return {
       id: group.id,
@@ -308,10 +372,10 @@ function isKpWeak(pointName, groupName) {
 
 // 完整学科图谱的全部知识点节点（带坐标 + 是否薄弱标记）
 const kgPoints = computed(() => {
-  const groups = cLanguageKnowledgeGraph.groups
+  const groups = kgSource.value.groups
   const pointsByGroup = new Map()
   groups.forEach((g) => pointsByGroup.set(g.id, []))
-  cLanguageKnowledgeGraph.points.forEach((p) => {
+  kgSource.value.points.forEach((p) => {
     if (!pointsByGroup.has(p.groupId)) pointsByGroup.set(p.groupId, [])
     pointsByGroup.get(p.groupId).push(p)
   })
@@ -2229,6 +2293,7 @@ onMounted(async () => {
     }, rootRef.value)
   }
   await Promise.all([loadStudents(), loadProviders(), loadTeacherClasses()])
+  loadLiveGraph()
   if (lastRun.value) {
     syncGeneratedOutputs()
   }

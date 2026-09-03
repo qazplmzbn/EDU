@@ -640,6 +640,32 @@ export const stageEvaluationApi = {
   },
 }
 
+// ===== 职业画像与岗位匹配（学生端六维度画像"岗位匹配度"） =====
+export const careerApi = {
+  occupations(params) {
+    return query('/api/competency/occupations', params)
+  },
+  gaps(occupationId) {
+    return query('/api/competency/career/gaps', occupationId == null ? {} : { occupationId })
+  },
+  report(occupationId) {
+    return query('/api/competency/career/report', occupationId == null ? {} : { occupationId })
+  },
+  diagnosticTargets(occupationId) {
+    return query('/api/competency/career/diagnostic-targets', occupationId == null ? {} : { occupationId })
+  },
+}
+
+// ===== Agent 任务（教师端个性化路径生成过程 trace） =====
+export const agentTaskApi = {
+  detail(taskCode) {
+    return get(`/api/agent-tasks/${taskCode}`)
+  },
+  trace(taskCode) {
+    return get(`/api/agent-tasks/${taskCode}/trace`)
+  },
+}
+
 export const adminApi = {
   pageUsers(page = 1, size = 20) {
     return get('/api/admin/users', { page, size })

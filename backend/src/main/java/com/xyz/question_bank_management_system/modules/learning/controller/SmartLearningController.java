@@ -125,7 +125,7 @@ public class SmartLearningController {
     }
 
     @GetMapping("/knowledge-relations")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
     public ApiResponse<List<QbKnowledgeRelation>> knowledgeRelations() {
         return ApiResponse.ok(knowledgeGraphService.relations());
     }

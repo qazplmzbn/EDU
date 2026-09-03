@@ -41,7 +41,7 @@ public interface QbKnowledgePointMapper {
             "SELECT kp.*, COALESCE(sks.mastery_value, 0) AS mastery_value, COALESCE(sks.attempt_count, 0) AS attempt_count",
             "FROM knowledge_point kp",
             "LEFT JOIN student_knowledge_state sks ON sks.knowledge_point_id = kp.id AND sks.user_id = #{userId}",
-            "WHERE kp.is_deleted = 0",
+            "WHERE kp.is_deleted = 0 AND kp.level > 1",
             "ORDER BY COALESCE(sks.mastery_value, 0) ASC, COALESCE(sks.attempt_count, 0) DESC, kp.level ASC, kp.id ASC",
             "LIMIT #{limit}"
     })

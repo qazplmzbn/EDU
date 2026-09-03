@@ -94,3 +94,6 @@ tmp/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local db debugging artifacts
+/backend/_dbcheck/
